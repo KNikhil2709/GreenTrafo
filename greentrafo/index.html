@@ -1,0 +1,1540 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>GreenTrafo — Green thermal-life budgeting for grid reliability</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --green: #3DCD58;          /* Schneider Life Green */
+    --green-br: #5FE07A;        /* brighter green for glow */
+    --green-deep: #1B7A3E;
+    /* dark surfaces */
+    --bg: #04120C;
+    --bg-2: #061A10;
+    --panel: #0A1F14;
+    --panel-2: #0D2619;
+    --panel-3: #10301F;
+    --line: rgba(255,255,255,0.08);
+    --line-2: rgba(61,205,88,0.18);
+    --ink: #EAF5EC;
+    --ink-2: #AFCBB7;
+    --ink-3: #6E9079;
+    /* risk bands — deliberately NOT the accent green */
+    --ok: #2ECC71;
+    --watch: #F2C12E;
+    --high: #F28C28;
+    --critical: #E24C4C;
+    --pos: #4ADE80;            /* good delta */
+    --neg: #F87171;            /* bad delta */
+    box-sizing: border-box;
+    padding-top: env(safe-area-inset-top, 0px);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  * { box-sizing: border-box; }
+  html { scroll-padding-top: 0; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+    font-size: 14px; line-height: 1.5; -webkit-font-smoothing: antialiased;
+  }
+  h1,h2,h3 { margin: 0; font-weight: 600; letter-spacing: -0.01em; }
+  button { font-family: inherit; cursor: pointer; }
+  a { color: var(--green); }
+
+  #app-root { background:
+    radial-gradient(1200px 700px at 80% -5%, rgba(61,205,88,0.08), transparent 60%),
+    linear-gradient(180deg, #04120C, #061007 60%, #04120C); min-height: 100vh; }
+  .wrap { max-width: 1340px; margin: 0 auto; padding: 0 22px; }
+
+  /* header */
+  header.top {
+    background: rgba(6,20,12,0.85); backdrop-filter: blur(8px);
+    border-bottom: 1px solid var(--line);
+    padding: 14px 0; position: sticky; top: 0; z-index: 20;
+  }
+  .brand { display: flex; align-items: center; gap: 12px; }
+  .brand .mark {
+    width: 34px; height: 34px; border-radius: 9px; flex: none;
+    background: linear-gradient(145deg, var(--green), var(--green-deep)); display: grid; place-items: center;
+    color: var(--bg); font-weight: 800; font-size: 18px; box-shadow: 0 0 18px rgba(61,205,88,0.45);
+  }
+  .brand h1 { font-size: 17px; color: #fff; }
+  .brand .tag { font-size: 12px; color: var(--ink-3); margin-top: 1px; }
+  .brand .right { margin-left: auto; text-align: right; font-size: 11.5px; color: var(--ink-3); }
+  .brand .right b { color: var(--green); font-weight: 600; }
+
+  /* step progress strip */
+  .steps { border-bottom: 1px solid var(--line); background: rgba(10,31,20,0.5); }
+  .steps .wrap { display: flex; gap: 8px; padding: 10px 22px; flex-wrap: wrap; }
+  .steps .step { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--ink-3);
+    padding: 5px 12px; border-radius: 999px; border: 1px solid transparent; }
+  .steps .step .idx { width: 18px; height: 18px; border-radius: 50%; display: grid; place-items: center;
+    font-size: 10.5px; font-weight: 700; background: rgba(255,255,255,0.06); color: var(--ink-2); }
+  .steps .step.done { color: var(--ink-2); }
+  .steps .step.done .idx { background: var(--green); color: var(--bg); box-shadow: 0 0 10px rgba(61,205,88,0.5); }
+  .steps .step.active { color: #fff; border-color: var(--line-2); background: rgba(61,205,88,0.08); }
+  .steps .step.active .idx { background: var(--green); color: var(--bg); }
+
+  /* green outcomes strip */
+  .greenstrip { background: linear-gradient(90deg, rgba(27,122,62,0.18), rgba(61,205,88,0.06));
+    border-bottom: 1px solid var(--line-2); }
+  .greenstrip .wrap { display: flex; gap: 30px; padding: 12px 22px; flex-wrap: wrap; align-items: center; }
+  .greenstrip .lab { font-size: 10.5px; color: var(--ink-3); letter-spacing: 0.04em; text-transform: uppercase; }
+  .gstat { display: flex; align-items: baseline; gap: 7px; }
+  .gstat .n { font-size: 20px; font-weight: 700; color: var(--green-br); font-variant-numeric: tabular-nums;
+    text-shadow: 0 0 18px rgba(61,205,88,0.4); }
+  .gstat .u { font-size: 11.5px; color: var(--ink-2); }
+  .gstat .info { font-size: 11px; color: var(--ink-3); cursor: help; border-bottom: 1px dotted var(--ink-3); }
+
+  /* tabs */
+  nav.tabs { background: transparent; border-bottom: 1px solid var(--line); }
+  nav.tabs .wrap { display: flex; gap: 4px; }
+  nav.tabs button {
+    background: none; border: none; color: var(--ink-3); padding: 12px 18px; font-size: 13.5px; font-weight: 500;
+    border-bottom: 2px solid transparent;
+  }
+  nav.tabs button[aria-selected="true"] { color: #fff; border-bottom-color: var(--green);
+    text-shadow: 0 0 16px rgba(61,205,88,0.5); }
+  nav.tabs button:hover { color: var(--ink); }
+
+  main { padding: 20px 0 54px; }
+  .grid { display: grid; grid-template-columns: 300px 1fr 360px; gap: 16px; align-items: start; }
+  @media (max-width: 1200px) { .grid { grid-template-columns: 280px 1fr; } .grid .railR { grid-column: 1 / -1; } }
+  @media (max-width: 820px) { .grid { grid-template-columns: 1fr; } }
+
+  .card {
+    background: linear-gradient(180deg, var(--panel), var(--panel-2));
+    border: 1px solid var(--line); border-radius: 14px; padding: 16px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+  }
+  .card h2 { font-size: 14px; margin-bottom: 3px; color: #fff; }
+  .card .sub { font-size: 12px; color: var(--ink-2); margin-bottom: 13px; }
+
+  /* map */
+  .mapcard { padding: 0; overflow: hidden; position: relative; }
+  .maphead { padding: 14px 16px 10px; display: flex; align-items: flex-start; gap: 12px; }
+  .maphead h2 { font-size: 14px; color: #fff; }
+  .maphead .sub { font-size: 12px; color: var(--ink-2); margin-top: 2px; }
+  .simbadge { margin-left: auto; flex: none; font-size: 10.5px; font-weight: 600; color: var(--green-br);
+    background: rgba(61,205,88,0.1); border: 1px solid var(--line-2); padding: 3px 10px; border-radius: 999px; }
+  svg.feeder { display: block; width: 100%; height: auto;
+    background: radial-gradient(900px 500px at 50% 0%, rgba(61,205,88,0.05), transparent 60%), #05150D; }
+  .maplegend { position: absolute; left: 14px; bottom: 14px; background: rgba(4,18,12,0.82);
+    border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; backdrop-filter: blur(6px);
+    font-size: 11px; color: var(--ink-2); display: grid; gap: 6px; }
+  .maplegend .row { display: flex; align-items: center; gap: 7px; }
+  .maplegend i { width: 11px; height: 11px; border-radius: 3px; display: inline-block; }
+  .maptoggles { position: absolute; right: 14px; top: 56px; background: rgba(4,18,12,0.82);
+    border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; backdrop-filter: blur(6px);
+    font-size: 12px; color: var(--ink-2); display: grid; gap: 7px; }
+  .maptoggles label { display: flex; align-items: center; gap: 8px; cursor: pointer; }
+  .maptoggles input { accent-color: var(--green); }
+
+  /* controls */
+  .field { margin-bottom: 15px; }
+  .field > label { display: block; font-size: 11px; font-weight: 600; color: var(--ink-3);
+    margin-bottom: 7px; letter-spacing: 0.08em; text-transform: uppercase; }
+  .seg { display: flex; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; background: rgba(0,0,0,0.2); }
+  .seg button { flex: 1; background: none; border: none; padding: 9px 6px; font-size: 12.5px; color: var(--ink-2);
+    border-right: 1px solid var(--line); }
+  .seg button:last-child { border-right: none; }
+  .seg button[aria-pressed="true"] { background: linear-gradient(145deg, var(--green), var(--green-deep));
+    color: var(--bg); font-weight: 600; box-shadow: 0 0 16px rgba(61,205,88,0.4) inset; }
+  .seg.wrap2 { flex-wrap: wrap; } .seg.wrap2 button { flex: 1 1 42%; }
+  .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .num label { display: block; font-size: 11.5px; color: var(--ink-2); margin-bottom: 5px; }
+  .num .v { font-weight: 700; color: #fff; font-variant-numeric: tabular-nums; }
+  input[type=range] { width: 100%; accent-color: var(--green); }
+
+  .btn { width: 100%; border: none; border-radius: 11px; padding: 13px; font-size: 14.5px; font-weight: 700;
+    background: linear-gradient(145deg, var(--green-br), var(--green-deep)); color: var(--bg);
+    box-shadow: 0 0 26px rgba(61,205,88,0.4); display: inline-flex; align-items: center; justify-content: center; gap: 9px; }
+  .btn:hover { box-shadow: 0 4px 34px rgba(61,205,88,0.6); }
+  .btn:disabled { background: #244A33; color: var(--ink-3); box-shadow: none; cursor: default; }
+
+  /* result cards (right rail) */
+  .rc { border: 1px solid var(--line); border-radius: 12px; padding: 14px; margin-bottom: 10px;
+    background: linear-gradient(180deg, var(--panel-2), var(--panel)); cursor: pointer; transition: border-color .15s, box-shadow .2s; }
+  .rc:hover { border-color: var(--line-2); }
+  .rc[aria-pressed="true"] { border-color: var(--green); box-shadow: 0 0 0 1px var(--green) inset, 0 0 24px rgba(61,205,88,0.2); }
+  .rc .rh { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 10px; }
+  .rc .rh .nm { font-size: 14px; font-weight: 600; color: #fff; }
+  .rc .rh .pr { font-size: 12px; color: var(--ink-3); }
+  .rc .rg { display: grid; grid-template-columns: 1fr 1fr; gap: 9px 14px; }
+  .rc .cell .cl { font-size: 10.5px; color: var(--ink-3); letter-spacing: 0.04em; text-transform: uppercase; }
+  .rc .cell .cv { font-size: 15px; font-weight: 700; color: #fff; font-variant-numeric: tabular-nums;
+    display: flex; align-items: baseline; gap: 6px; }
+  .rc .cell .cv .d { font-size: 11px; font-weight: 600; }
+  .d.pos { color: var(--pos); } .d.neg { color: var(--neg); }
+
+  .ribbon { font-size: 11px; color: var(--green-br); background: rgba(61,205,88,0.1);
+    border: 1px solid var(--line-2); padding: 2px 9px; border-radius: 999px; }
+
+  /* metrics (protect) */
+  .metric-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 6px; }
+  .mstat { border: 1px solid var(--line); border-radius: 11px; padding: 11px 13px;
+    background: rgba(0,0,0,0.18); }
+  .mstat .n { font-size: 21px; font-weight: 700; font-variant-numeric: tabular-nums; color: #fff; }
+  .mstat .l { font-size: 11px; color: var(--ink-2); margin-top: 1px; }
+  .mstat.good .n { color: var(--green-br); text-shadow: 0 0 16px rgba(61,205,88,0.35); }
+  .mstat.bad .n { color: var(--neg); }
+
+  .reason { font-size: 12px; color: var(--ink-2); background: rgba(61,205,88,0.08);
+    border: 1px solid var(--line-2); border-radius: 9px; padding: 9px 11px; margin-top: 10px; }
+  .reason b { color: #fff; }
+  .hint { font-size: 12.5px; color: var(--ink-2); }
+
+  /* comparison bars */
+  .cmp .crow { margin-bottom: 13px; }
+  .cmp .cl { display: flex; justify-content: space-between; font-size: 11.5px; color: var(--ink-2); margin-bottom: 4px; }
+  .cmp .bar { height: 8px; border-radius: 5px; background: rgba(255,255,255,0.06); position: relative; overflow: hidden; }
+  .cmp .bar i { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 5px; }
+  .cmp .plan i { background: linear-gradient(90deg, var(--green), var(--green-deep)); box-shadow: 0 0 12px rgba(61,205,88,0.4); }
+  .cmp .base i { background: #3A4D42; }
+  .cmp .tag { font-size: 10.5px; color: var(--ink-3); }
+
+  /* slider / play */
+  .slider-row { display: flex; align-items: center; gap: 10px; }
+  .clock { font-weight: 700; font-variant-numeric: tabular-nums; min-width: 52px; color: #fff; }
+  .playbtn { background: linear-gradient(145deg, var(--green-br), var(--green-deep)); color: var(--bg);
+    border: none; border-radius: 9px; width: 40px; height: 36px; font-size: 14px; box-shadow: 0 0 16px rgba(61,205,88,0.4); }
+
+  /* method */
+  .prose { max-width: 820px; }
+  .prose h2 { font-size: 16px; margin: 22px 0 8px; color: #fff; }
+  .prose h2:first-child { margin-top: 2px; }
+  .prose p, .prose li { color: var(--ink-2); }
+  .prose p { margin: 8px 0; } .prose ul { margin: 8px 0; padding-left: 20px; } .prose li { margin: 4px 0; }
+  .prose b { color: var(--ink); }
+  .prose table { border-collapse: collapse; width: 100%; margin: 10px 0; font-size: 13px; }
+  .prose th, .prose td { border: 1px solid var(--line); padding: 8px 11px; text-align: left; vertical-align: top; color: var(--ink-2); }
+  .prose th { background: rgba(61,205,88,0.1); color: #fff; font-weight: 600; }
+  .prose code { background: rgba(255,255,255,0.08); padding: 1px 5px; border-radius: 4px; font-size: 12.5px; color: var(--green-br); }
+  .callout { background: rgba(242,193,46,0.08); border: 1px solid rgba(242,193,46,0.3); border-radius: 10px;
+    padding: 12px 14px; font-size: 12.5px; color: #E8D9A8; }
+  footer { text-align: center; font-size: 11px; color: var(--ink-3); padding: 26px 0 10px; border-top: 1px solid var(--line); margin-top: 20px; }
+
+
+  /* ---------- dark cinematic hero (PravahQ-style, Schneider green) ---------- */
+  .hero {
+    position: relative; min-height: 100vh; min-height: 100svh;
+    background:
+      radial-gradient(1100px 620px at 50% 8%, rgba(61,205,88,0.16), transparent 60%),
+      radial-gradient(900px 520px at 50% 100%, rgba(27,122,62,0.20), transparent 62%),
+      linear-gradient(180deg, #04120C 0%, #061A10 55%, #04120C 100%);
+    color: #EAF5EC; overflow: hidden;
+    display: flex; flex-direction: column;
+  }
+  .hero canvas.particles { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 0; }
+  .hero .vignette { position: absolute; inset: 0; z-index: 1;
+    background: radial-gradient(130% 90% at 50% 40%, transparent 55%, rgba(2,10,6,0.72) 100%); pointer-events: none; }
+
+  .hero .hnav { position: relative; z-index: 3; display: flex; align-items: center;
+    padding: calc(18px + env(safe-area-inset-top,0px)) 28px 18px; gap: 18px; }
+  .hero .hnav .logo { display: flex; align-items: center; gap: 10px; font-weight: 600; font-size: 16px; letter-spacing: -0.01em; }
+  .hero .hnav .logo .leaf { width: 30px; height: 30px; border-radius: 8px; display: grid; place-items: center;
+    background: linear-gradient(145deg, #3DCD58, #1B7A3E); color: #04120C; font-weight: 800; font-size: 17px;
+    box-shadow: 0 0 20px rgba(61,205,88,0.5); }
+  .hero .hnav .logo b { color: #fff; } .hero .hnav .logo span { color: var(--green); }
+  .hero .hnav .pill { margin-left: auto; font-size: 11.5px; color: #CDE8D4;
+    border: 1px solid rgba(61,205,88,0.35); background: rgba(61,205,88,0.08);
+    padding: 5px 12px; border-radius: 999px; display: flex; align-items: center; gap: 7px; }
+  .hero .hnav .pill .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--green); box-shadow: 0 0 8px var(--green); }
+
+  .hero .hbody { position: relative; z-index: 2; flex: 1; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; text-align: center; padding: 10px 24px 40px; }
+  .hero .wordmark { display: flex; align-items: center; gap: 16px; margin-bottom: 26px;
+    opacity: 0; transform: translateY(14px); animation: rise 0.8s 0.05s forwards cubic-bezier(.2,.7,.2,1); }
+  .hero .wordmark .big {
+    width: 62px; height: 62px; border-radius: 16px; display: grid; place-items: center;
+    background: linear-gradient(145deg, #3DCD58, #15823B); color: #04120C; font-weight: 800; font-size: 34px;
+    box-shadow: 0 0 46px rgba(61,205,88,0.55), inset 0 0 0 1px rgba(255,255,255,0.12); }
+  .hero .wordmark h1 { font-size: clamp(34px, 6vw, 60px); font-weight: 700; letter-spacing: -0.025em; color: #fff; }
+  .hero .wordmark h1 i { font-style: normal;
+    background: linear-gradient(120deg, #6FE085, #3DCD58 55%, #1B7A3E);
+    -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .hero .tagline { font-size: clamp(20px, 3.4vw, 34px); font-weight: 600; letter-spacing: -0.02em;
+    max-width: 18ch; line-height: 1.15; color: #fff; margin-bottom: 16px;
+    opacity: 0; transform: translateY(14px); animation: rise 0.8s 0.18s forwards cubic-bezier(.2,.7,.2,1); }
+  .hero .tagline em { font-style: normal;
+    background: linear-gradient(120deg, #7FE892, #3DCD58); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .hero .sub { font-size: clamp(14px, 1.9vw, 17px); color: #AFCBB7; max-width: 52ch; line-height: 1.5;
+    opacity: 0; transform: translateY(14px); animation: rise 0.8s 0.30s forwards cubic-bezier(.2,.7,.2,1); }
+
+  .hero .stats { margin-top: 34px; display: grid; grid-template-columns: repeat(4, 1fr);
+    gap: 0; background: rgba(10,28,18,0.55); border: 1px solid rgba(61,205,88,0.18); border-radius: 18px;
+    backdrop-filter: blur(6px); overflow: hidden; width: min(760px, 92vw);
+    box-shadow: 0 20px 60px rgba(0,0,0,0.4), inset 0 0 40px rgba(61,205,88,0.05);
+    opacity: 0; transform: translateY(14px); animation: rise 0.8s 0.42s forwards cubic-bezier(.2,.7,.2,1); }
+  .hero .stats .st { padding: 20px 10px; border-right: 1px solid rgba(255,255,255,0.06); }
+  .hero .stats .st:last-child { border-right: none; }
+  .hero .stats .st .n { font-size: clamp(28px, 4vw, 40px); font-weight: 700; color: #fff; font-variant-numeric: tabular-nums;
+    text-shadow: 0 0 24px rgba(61,205,88,0.35); }
+  .hero .stats .st .l { font-size: 10.5px; letter-spacing: 0.14em; color: #8FB69B; margin-top: 4px; text-transform: uppercase; }
+
+  .hero .ctas { margin-top: 32px; display: flex; gap: 14px; flex-wrap: wrap; justify-content: center;
+    opacity: 0; transform: translateY(14px); animation: rise 0.8s 0.54s forwards cubic-bezier(.2,.7,.2,1); }
+  .hero .cta {
+    border: none; border-radius: 12px; padding: 14px 26px; font-size: 15px; font-weight: 600; cursor: pointer;
+    display: inline-flex; align-items: center; gap: 10px; transition: transform .15s, box-shadow .2s; }
+  .hero .cta.primary { background: linear-gradient(145deg, #4AD765, #1B7A3E); color: #04120C;
+    box-shadow: 0 0 30px rgba(61,205,88,0.5); }
+  .hero .cta.primary:hover { transform: translateY(-2px); box-shadow: 0 6px 40px rgba(61,205,88,0.7); }
+  .hero .cta.ghost { background: rgba(255,255,255,0.04); color: #EAF5EC; border: 1px solid rgba(255,255,255,0.18); }
+  .hero .cta.ghost:hover { background: rgba(255,255,255,0.09); transform: translateY(-2px); }
+
+  .hero .scrollcue { position: relative; z-index: 2; text-align: center; padding: 0 0 26px;
+    color: #6E9079; font-size: 10.5px; letter-spacing: 0.18em; text-transform: uppercase;
+    opacity: 0; animation: fadein 1s 1s forwards; }
+  .hero .scrollcue .chev { display: block; margin: 0 auto 8px; width: 22px; height: 22px;
+    border-right: 2px solid var(--green); border-bottom: 2px solid var(--green); transform: rotate(45deg);
+    animation: bob 1.8s ease-in-out infinite; }
+
+  @keyframes rise { to { opacity: 1; transform: translateY(0); } }
+  @keyframes fadein { to { opacity: 1; } }
+  @keyframes bob { 0%,100% { transform: rotate(45deg) translate(0,0);} 50% { transform: rotate(45deg) translate(4px,4px);} }
+  @media (prefers-reduced-motion: reduce) {
+    .hero .wordmark, .hero .tagline, .hero .sub, .hero .stats, .hero .ctas { animation: none; opacity: 1; transform: none; }
+    .hero .scrollcue { animation: none; opacity: 1; } .hero .scrollcue .chev { animation: none; }
+  }
+  @media (max-width: 640px) { .hero .stats { grid-template-columns: repeat(2, 1fr); }
+    .hero .stats .st:nth-child(2) { border-right: none; } }
+
+  /* app wrapper gets a quiet top divider when it follows the hero */
+  #app-root { scroll-margin-top: 0; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react/18.3.1/umd/react.production.min.js"></script>
+<script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.3.1/umd/react-dom.production.min.js"></script>
+<script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.24.7/babel.min.js"></script>
+<script>
+// GreenTrafo simulation engine (browser, lightweight).
+// NOT real power flow. A transparent approximation of the PRD's engine:
+// seeded synthetic feeder + load shapes + a discrete IEEE C57.91 thermal model.
+// Every number is reproducible from a seed. All data is simulated.
+
+// ---- seeded RNG (mulberry32) ----
+function rng(seed) {
+  let a = seed >>> 0;
+  return function () {
+    a |= 0; a = (a + 0x6D2B79F5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+function gauss(r, mu, sd) {
+  const u = Math.max(1e-9, r()), v = r();
+  return mu + sd * Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
+}
+
+// ---- constants (assumed IEEE C57.91 typical values, see Method tab) ----
+const RATINGS = [100, 200, 250];           // kVA
+const TOP_OIL_RISE_RATED = 55;             // deg C at rated load
+const HOT_SPOT_RISE_RATED = 25;            // deg C gradient at rated load
+const TAU_OIL_H = 3.0;                      // oil time constant (hours)
+const N_EXP = 0.8, M_EXP = 0.8;             // oil / winding exponents
+const HOT_SPOT_LIMIT = 110;                // deg C, thermal limit
+const STEP_H = 0.25;                        // 15-minute steps
+const DAY_STEPS = 96;
+
+// upgrade cost per rating (INR, placeholder config values)
+const UPGRADE_COST = { 100: 180000, 200: 240000, 250: 300000 };
+const MOBILE_COST = 120000;
+
+// ---- feeder ----
+function buildNetwork(seed, n = 40) {
+  const r = rng(seed * 2654435761);
+  const transformers = [];
+  // radial layout: trunk down the middle, laterals left/right
+  const perRow = 5;
+  for (let i = 0; i < n; i++) {
+    const rating = RATINGS[Math.floor(r() * RATINGS.length)];
+    const row = Math.floor(i / perRow);
+    const col = i % perRow;
+    const peakFactor = 0.62 + r() * 0.55;   // base peak as fraction of rating
+    transformers.push({
+      id: "T-" + String(i + 1).padStart(2, "0"),
+      rating,
+      x: 90 + col * 150 + (r() - 0.5) * 24,
+      y: 70 + row * 78 + (r() - 0.5) * 18,
+      // intrinsic demand profile params
+      peakFactor,
+      acShare: 0.3 + r() * 0.5,         // share of load that is cooling
+      // more EVs on busier transformers, so risk and EV load correlate
+      evCount: Math.round((peakFactor - 0.4) * 6 + r() * 3),
+      unsanctioned: r() * 0.16,         // hidden load growth fraction
+      ageClass: r() < 0.3 ? "old" : r() < 0.7 ? "mid" : "new",
+    });
+  }
+  // edges: trunk + lateral to each
+  const edges = [];
+  for (let row = 0; row * perRow < n; row++) {
+    const a = transformers[row * perRow];
+    const prev = transformers[(row - 1) * perRow];
+    if (prev && a) edges.push([prev.id, a.id]);
+    for (let col = 1; col < perRow; col++) {
+      const idx = row * perRow + col;
+      if (transformers[idx]) edges.push([transformers[idx - 1].id, transformers[idx].id]);
+    }
+  }
+  return { seed, transformers, edges };
+}
+
+// ---- scenarios ----
+const SCENARIOS = {
+  normal:    { label: "Normal summer",  ambientPeak: 34, acGain: 1.0, evGain: 1.0 },
+  hot:       { label: "Hot summer",     ambientPeak: 42, acGain: 1.35, evGain: 1.1 },
+  highEV:    { label: "High EV growth", ambientPeak: 38, acGain: 1.15, evGain: 2.2 },
+};
+
+// ambient temperature over a day (deg C): cool pre-dawn, hot mid-afternoon
+function ambientAt(step, peak) {
+  const h = step * STEP_H;
+  const base = peak - 10;
+  return base + (peak - base) * Math.max(0, Math.sin((h - 5) / 24 * 2 * Math.PI * 0.75));
+}
+
+// solar generation shape (fraction of a notional cap), zero after ~18:30
+function solarAt(step) {
+  const h = step * STEP_H;
+  if (h < 6.5 || h > 18.5) return 0;
+  return Math.max(0, Math.sin((h - 6.5) / 12 * Math.PI));
+}
+
+// per-transformer day load in per-unit of rating, before any flexible control
+function dayLoadPU(t, scenario, withGrowth = true) {
+  const sc = SCENARIOS[scenario];
+  const growth = withGrowth ? 1 + t.unsanctioned : 1;
+  const out = [];
+  for (let s = 0; s < DAY_STEPS; s++) {
+    const h = s * STEP_H;
+    // base residential/commercial double-hump
+    const morning = Math.exp(-Math.pow((h - 9) / 2.2, 2)) * 0.55;
+    const evening = Math.exp(-Math.pow((h - 20) / 2.0, 2)) * 1.0;
+    const baseShape = 0.3 + morning + evening;
+    // cooling load tracks ambient, strongest in the evening
+    const ac = t.acShare * sc.acGain * Math.max(0, (ambientAt(s, sc.ambientPeak) - 28) / 14)
+               * (0.6 + 0.6 * evening);
+    const pu = t.peakFactor * growth * (baseShape + ac) / 1.55;
+    out.push(pu);
+  }
+  return out;
+}
+
+// EV sessions on a transformer for the evening (arrive 17:00-21:00)
+function evSessions(t, scenario, seed) {
+  const sc = SCENARIOS[scenario];
+  const r = rng((seed ^ parseInt(t.id.slice(2))) * 40503);
+  const count = Math.round(t.evCount * sc.evGain);
+  const sessions = [];
+  for (let i = 0; i < count; i++) {
+    const arrive = 17 + r() * 4;                   // hour
+    const depart = 6 + r() * 3;                     // next morning
+    const energy = 6 + r() * 8;                     // kWh needed
+    const maxKw = 3.3 + (r() < 0.3 ? 3.7 : 0);      // 3.3 or 7 kW
+    sessions.push({ id: t.id + "-ev" + i, arrive, depart, energy, maxKw });
+  }
+  return sessions;
+}
+
+// ---- IEEE C57.91 discrete thermal model ----
+// returns {hotSpot[], topOil[], loadingPU[], lolHours, overloadHours}
+function thermal(loadingPU, ambientSeries) {
+  const hotSpot = [], topOil = [];
+  let dTO = TOP_OIL_RISE_RATED * Math.pow(Math.max(0.05, loadingPU[0]), 2 * N_EXP) /
+            Math.pow(1, 2 * N_EXP); // seed oil rise near steady state of first point
+  dTO = TOP_OIL_RISE_RATED * Math.pow(loadingPU[0] * loadingPU[0], N_EXP);
+  let lol = 0, overload = 0;
+  const alpha = STEP_H / TAU_OIL_H;
+  for (let s = 0; s < loadingPU.length; s++) {
+    const K = Math.max(0.02, loadingPU[s]);         // per-unit load
+    const dTOu = TOP_OIL_RISE_RATED * Math.pow(K * K, N_EXP);   // ultimate oil rise
+    dTO = dTO + alpha * (dTOu - dTO);               // first-order lag
+    const dHS = HOT_SPOT_RISE_RATED * Math.pow(K * K, M_EXP);   // winding gradient (fast)
+    const amb = ambientSeries[s % ambientSeries.length];
+    const theta = amb + dTO + dHS;                  // hot-spot temperature
+    hotSpot.push(theta);
+    topOil.push(amb + dTO);
+    // ageing acceleration factor (IEEE, 110C reference)
+    const faa = Math.exp(15000 / 383 - 15000 / (theta + 273));
+    lol += faa * STEP_H;
+    if (K > 1.0) overload += STEP_H;
+  }
+  return { hotSpot, topOil, loadingPU, lolHours: lol, overloadHours: overload };
+}
+
+// run one transformer for a day, no flexible control
+function simulateTransformer(t, scenario, withGrowth = true) {
+  const sc = SCENARIOS[scenario];
+  const amb = Array.from({ length: DAY_STEPS }, (_, s) => ambientAt(s, sc.ambientPeak));
+  const pu = dayLoadPU(t, scenario, withGrowth);
+  const res = thermal(pu, amb);
+  const peakLoading = Math.max(...pu);
+  const peakHotSpot = Math.max(...res.hotSpot);
+  return { ...res, peakLoading, peakHotSpot, ambient: amb };
+}
+
+// risk band from peak loading
+function riskBand(peakLoading) {
+  if (peakLoading >= 1.0) return "critical";
+  if (peakLoading >= 0.9) return "high";
+  if (peakLoading >= 0.8) return "watch";
+  return "ok";
+}
+
+// ---- apply a Plan action to a transformer (returns a modified copy) ----
+function applyAction(t, action) {
+  const c = { ...t };
+  if (action === "upgrade") {
+    const idx = RATINGS.indexOf(t.rating);
+    c.rating = RATINGS[Math.min(RATINGS.length - 1, idx + 1)];
+    if (c.rating === t.rating) c.rating = Math.round(t.rating * 1.3); // already top: bump
+    c.peakFactor = t.peakFactor * (t.rating / c.rating);
+  } else if (action === "rebalance") {
+    c.peakFactor = t.peakFactor * 0.88;   // phase rebalancing relieves ~12%
+  } else if (action === "mobile") {
+    c.peakFactor = t.peakFactor * 0.78;   // mobile unit shares peak-day load
+  }
+  return c;
+}
+
+function actionCost(t, action) {
+  if (action === "upgrade") return UPGRADE_COST[t.rating] ?? 300000;
+  if (action === "mobile") return MOBILE_COST;
+  if (action === "rebalance") return 40000;
+  return 0;
+}
+
+// cache of per-transformer sims keyed by scenario|id|action (actions are independent)
+const simCache = new Map();
+function cachedSim(t, scenario, action) {
+  const key = scenario + "|" + t.id + "|" + action;
+  let v = simCache.get(key);
+  if (!v) {
+    const tt = applyAction(t, action);
+    const s = simulateTransformer(tt, scenario);
+    v = { band: riskBand(s.peakLoading), peakLoading: s.peakLoading,
+          peakHotSpot: s.peakHotSpot, lol: s.lolHours, overload: s.overloadHours };
+    simCache.set(key, v);
+  }
+  return v;
+}
+function clearSimCache() { simCache.clear(); }
+
+// evaluate a whole suburb under a set of actions
+function evaluatePlan(network, scenario, actions) {
+  let overload = 0, lol = 0, capex = 0;
+  const perT = {};
+  for (const t of network.transformers) {
+    const a = actions[t.id] ?? "none";
+    capex += actionCost(t, a);
+    const sim = cachedSim(t, scenario, a);
+    overload += sim.overload;
+    lol += sim.lol;
+    perT[t.id] = { band: sim.band, peakLoading: sim.peakLoading,
+                   peakHotSpot: sim.peakHotSpot, lol: sim.lol, action: a };
+  }
+  return { overloadHours: overload, lossOfLifeHours: lol, capexInr: capex, perT };
+}
+
+
+// GreenTrafo optimisers: Plan (multi-objective evolutionary) and Protect (greedy MPC).
+
+
+function rng2(seed) {
+  let a = seed >>> 0;
+  return function () {
+    a |= 0; a = (a + 0x6D2B79F5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+const ACTIONS = ["none", "upgrade", "rebalance", "mobile"];
+
+// objectives: [capex, overloadHours, lossOfLifeHours] — all minimise
+function objectives(network, scenario, actions) {
+  const e = evaluatePlan(network, scenario, actions);
+  return { obj: [e.capexInr, e.overloadHours, e.lossOfLifeHours], eval: e };
+}
+
+function dominates(a, b) {
+  let better = false;
+  for (let i = 0; i < a.length; i++) {
+    if (a[i] > b[i]) return false;
+    if (a[i] < b[i]) better = true;
+  }
+  return better;
+}
+
+// non-dominated sort -> array of fronts (indices)
+function nonDominatedSort(objs) {
+  const n = objs.length;
+  const S = Array.from({ length: n }, () => []);
+  const nd = new Array(n).fill(0);
+  const fronts = [[]];
+  for (let p = 0; p < n; p++) {
+    for (let q = 0; q < n; q++) {
+      if (p === q) continue;
+      if (dominates(objs[p], objs[q])) S[p].push(q);
+      else if (dominates(objs[q], objs[p])) nd[p]++;
+    }
+    if (nd[p] === 0) fronts[0].push(p);
+  }
+  let i = 0;
+  while (fronts[i].length) {
+    const next = [];
+    for (const p of fronts[i]) for (const q of S[p]) { if (--nd[q] === 0) next.push(q); }
+    i++; fronts.push(next);
+  }
+  fronts.pop();
+  return fronts;
+}
+
+function crowding(front, objs) {
+  const dist = {};
+  front.forEach(i => dist[i] = 0);
+  const m = objs[0].length;
+  for (let k = 0; k < m; k++) {
+    const sorted = [...front].sort((a, b) => objs[a][k] - objs[b][k]);
+    dist[sorted[0]] = dist[sorted[sorted.length - 1]] = Infinity;
+    const lo = objs[sorted[0]][k], hi = objs[sorted[sorted.length - 1]][k];
+    const span = hi - lo || 1;
+    for (let j = 1; j < sorted.length - 1; j++)
+      dist[sorted[j]] += (objs[sorted[j + 1]][k] - objs[sorted[j - 1]][k]) / span;
+  }
+  return dist;
+}
+
+// hypervolume proxy (normalised, 2D over overload & lol at fixed ref) for history chart
+function frontQuality(fronts, objs) {
+  if (!fronts[0] || !fronts[0].length) return 0;
+  const pts = fronts[0].map(i => objs[i]);
+  const maxO = Math.max(...objs.map(o => o[1])) || 1;
+  const maxL = Math.max(...objs.map(o => o[2])) || 1;
+  let hv = 0;
+  const sorted = pts.map(p => [p[1] / maxO, p[2] / maxL]).sort((a, b) => a[0] - b[0]);
+  let prevX = 0;
+  for (const [x, y] of sorted) { hv += (x - prevX) * (1 - y); prevX = x; }
+  hv += (1 - prevX) * 0;
+  return Math.max(0, hv);
+}
+
+// budgeted repair: keep cheapest-effective actions within budget
+function repair(network, actions, budget) {
+  let upgrades = 0, mobiles = 0;
+  // count and trim
+  for (const t of network.transformers) {
+    const a = actions[t.id];
+    if (a === "upgrade") { if (upgrades >= budget.upgrades) actions[t.id] = "none"; else upgrades++; }
+    else if (a === "mobile") { if (mobiles >= budget.mobileUnits) actions[t.id] = "none"; else mobiles++; }
+  }
+  return actions;
+}
+
+function randomPlan(network, budget, r) {
+  const a = {};
+  for (const t of network.transformers) {
+    const roll = r();
+    a[t.id] = roll < 0.55 ? "none" : ACTIONS[1 + Math.floor(r() * 3)];
+  }
+  return repair(network, a, budget);
+}
+
+// greedy baseline plan from random seed: biased to high-loading transformers
+function thresholdPlan(network, scenario, budget) {
+  const scored = network.transformers.map(t => {
+    const sim = simulateTransformer(t, scenario);
+    return { id: t.id, t, peak: sim.peakLoading };
+  }).sort((x, y) => y.peak - x.peak);
+  const a = {}; network.transformers.forEach(t => a[t.id] = "none");
+  let up = 0, mob = 0;
+  for (const s of scored) {
+    if (s.peak >= 0.9 && up < budget.upgrades) { a[s.id] = "upgrade"; up++; }
+    else if (s.peak >= 0.8 && mob < budget.mobileUnits) { a[s.id] = "mobile"; mob++; }
+  }
+  return a;
+}
+
+function runPlan(network, scenario, budget, seed = 42, gens = 60, pop = 40) {
+  const r = rng2(seed * 2246822519);
+  let population = Array.from({ length: pop }, () => randomPlan(network, budget, r));
+  // seed in the threshold plan too
+  population[0] = thresholdPlan(network, scenario, budget);
+  const history = [];
+  let objs = population.map(p => objectives(network, scenario, p).obj);
+
+  for (let g = 0; g < gens; g++) {
+    // offspring
+    const offspring = [];
+    for (let i = 0; i < pop; i++) {
+      const p1 = population[Math.floor(r() * pop)];
+      const p2 = population[Math.floor(r() * pop)];
+      const child = {};
+      for (const t of network.transformers) child[t.id] = r() < 0.5 ? p1[t.id] : p2[t.id];
+      // mutation
+      for (const t of network.transformers)
+        if (r() < 0.08) child[t.id] = ACTIONS[Math.floor(r() * 4)];
+      offspring.push(repair(network, child, budget));
+    }
+    const combined = population.concat(offspring);
+    const cObjs = combined.map(p => objectives(network, scenario, p).obj);
+    const fronts = nonDominatedSort(cObjs);
+    const next = []; const nextObjs = [];
+    for (const front of fronts) {
+      if (next.length + front.length <= pop) {
+        for (const i of front) { next.push(combined[i]); nextObjs.push(cObjs[i]); }
+      } else {
+        const d = crowding(front, cObjs);
+        const sorted = [...front].sort((a, b) => d[b] - d[a]);
+        for (const i of sorted) { if (next.length >= pop) break; next.push(combined[i]); nextObjs.push(cObjs[i]); }
+        break;
+      }
+    }
+    population = next; objs = nextObjs;
+    const q = frontQuality(nonDominatedSort(objs), objs);
+    const prev = history.length ? history[history.length - 1].quality : 0;
+    history.push({ gen: g + 1, quality: Math.max(prev, q) });
+  }
+
+  // final Pareto front
+  const fronts = nonDominatedSort(objs);
+  const front = fronts[0].map(i => {
+    const e = evaluatePlan(network, scenario, population[i]);
+    return { actions: population[i], capexInr: e.capexInr,
+             overloadHours: e.overloadHours, lossOfLifeHours: e.lossOfLifeHours, perT: e.perT };
+  });
+  // dedupe by rounded objectives
+  const seen = new Set(); const pareto = [];
+  for (const p of front.sort((a, b) => a.capexInr - b.capexInr)) {
+    const key = [Math.round(p.capexInr / 1000), Math.round(p.overloadHours), Math.round(p.lossOfLifeHours * 10)].join("|");
+    if (!seen.has(key)) { seen.add(key); pareto.push(p); }
+  }
+
+  // profiles
+  const lowestCost = pareto.reduce((a, b) => a.capexInr <= b.capexInr ? a : b);
+  const mostReliable = pareto.reduce((a, b) => a.lossOfLifeHours <= b.lossOfLifeHours ? a : b);
+  // balanced = knee (min normalised distance to ideal)
+  const co = pareto.map(p => p.capexInr), lo = pareto.map(p => p.lossOfLifeHours), oo = pareto.map(p => p.overloadHours);
+  const norm = (v, arr) => (v - Math.min(...arr)) / ((Math.max(...arr) - Math.min(...arr)) || 1);
+  const balanced = pareto.reduce((best, p) => {
+    const d = Math.hypot(norm(p.capexInr, co), norm(p.lossOfLifeHours, lo), norm(p.overloadHours, oo));
+    return d < best.d ? { p, d } : best;
+  }, { p: pareto[0], d: Infinity }).p;
+
+  // baseline at equal budget
+  const basePlan = thresholdPlan(network, scenario, budget);
+  const baseEval = evaluatePlan(network, scenario, basePlan);
+  const baseline = { actions: basePlan, capexInr: baseEval.capexInr,
+    overloadHours: baseEval.overloadHours, lossOfLifeHours: baseEval.lossOfLifeHours, perT: baseEval.perT };
+
+  return { pareto, profiles: { lowestCost, mostReliable, balanced }, baseline, history };
+}
+
+// ---- Protect: schedule flexible EV + AC on one transformer for the evening ----
+// Greedy valley-filling MPC proxy: fill charging into the lowest-temperature feasible slots
+// while meeting energy-by-departure, then report trajectory.
+function runProtect(network, scenario, transformerId, seed = 42) {
+  const t = network.transformers.find(x => x.id === transformerId);
+  const sc = SCENARIOS[scenario];
+  const amb = Array.from({ length: DAY_STEPS }, (_, s) => {
+    const h = s * STEP_H, base = sc.ambientPeak - 10;
+    return base + (sc.ambientPeak - base) * Math.max(0, Math.sin((h - 5) / 24 * 2 * Math.PI * 0.75));
+  });
+  // base (non-EV) load pu for this transformer
+  const baseSim = simulateTransformer({ ...t, evCount: 0 }, scenario);
+  const basePU = baseSim.loadingPU.slice();
+  const sessions = evSessions(t, scenario, seed);
+  const kWbase = t.rating; // 1 pu = rating kVA ~ kW for unity pf approximation
+
+  // helper: loading pu after adding charging kW array
+  function puWith(chargeKw, acShift = 0) {
+    return basePU.map((p, s) => p * (1 - acShift) + (chargeKw[s] || 0) / kWbase);
+  }
+
+  // UNMANAGED: charge full power from arrival
+  const unmanagedKw = new Array(DAY_STEPS).fill(0);
+  for (const sess of sessions) {
+    let need = sess.energy; let s = Math.round(sess.arrive / STEP_H);
+    while (need > 0 && s < DAY_STEPS + Math.round(sess.depart / STEP_H)) {
+      const idx = s % DAY_STEPS;
+      const e = Math.min(sess.maxKw * STEP_H, need);
+      unmanagedKw[idx] += e / STEP_H; need -= e; s++;
+    }
+  }
+  const unmanaged = thermal(puWith(unmanagedKw), amb);
+  const baseOnly = thermal(basePU, amb);
+  const baseOverLimit = baseOnly.hotSpot.filter(h => h > HOT_SPOT_LIMIT).length * STEP_H;
+
+  // MANAGED: valley-fill — allocate each session's energy to its feasible window,
+  // preferring the coolest feasible slots and keeping loading under a soft cap that
+  // corresponds to staying below the hot-spot limit.
+  const managedKw = new Array(DAY_STEPS).fill(0);
+  // small AC setpoint shift during the hottest evening hours (applied first)
+  const acShiftSeries = basePU.map((_, s) => { const h = s * STEP_H; return (h >= 18 && h <= 22) ? 0.07 : 0; });
+  const shiftedBasePU = basePU.map((p, s) => p * (1 - acShiftSeries[s]));
+  // loading cap that keeps hot-spot comfortably under the limit (per-unit)
+  const CAP = 0.9;
+  const loadNow = (s) => shiftedBasePU[s] + (managedKw[s] || 0) / kWbase;
+  let onTime = 0;
+  // sort sessions by tightness (least slack first) so hard cases get cool slots first
+  const ordered = [...sessions].sort((a, b) => (a.depart - a.arrive) - (b.depart - b.arrive));
+  for (const sess of ordered) {
+    const startIdx = Math.round(sess.arrive / STEP_H);
+    const endIdx = Math.round((24 + sess.depart) / STEP_H);
+    const slots = [];
+    for (let s = startIdx; s < endIdx; s++) slots.push(s % DAY_STEPS);
+    let need = sess.energy;
+    // pass 1: coolest slots with headroom under CAP
+    const byTemp = [...slots].sort((a, b) => (amb[a] + shiftedBasePU[a] * 30) - (amb[b] + shiftedBasePU[b] * 30));
+    for (const idx of byTemp) {
+      if (need <= 0) break;
+      const headroom = Math.max(0, (CAP - loadNow(idx)) * kWbase);
+      const give = Math.min(sess.maxKw, headroom) * STEP_H;
+      if (give <= 0) continue;
+      const e = Math.min(give, need);
+      managedKw[idx] += e / STEP_H; need -= e;
+    }
+    // pass 2: if still unmet, raise the cap gradually but keep it below overload
+    for (const cap of [1.0, 1.1]) {
+      if (need <= 0.01) break;
+      for (const idx of byTemp) {
+        if (need <= 0) break;
+        const headroom = Math.max(0, (cap - loadNow(idx)) * kWbase);
+        const give = Math.min(sess.maxKw, headroom) * STEP_H;
+        if (give <= 0) continue;
+        const e = Math.min(give, need);
+        managedKw[idx] += e / STEP_H; need -= e;
+      }
+    }
+    if (need <= 0.02) onTime++;
+  }
+  const managedPU = shiftedBasePU.map((p, s) => p + (managedKw[s] || 0) / kWbase);
+  const managed = thermal(managedPU, amb);
+
+  const peakWindow = (s) => { const h = s * STEP_H; return h >= 18 && h <= 22; };
+  let shiftedKwh = 0;
+  for (let s = 0; s < DAY_STEPS; s++)
+    if (peakWindow(s)) shiftedKwh += Math.max(0, unmanagedKw[s] - managedKw[s]) * STEP_H;
+
+  return {
+    transformerId, sessions: sessions.length, onTimeShare: sessions.length ? onTime / sessions.length : 1,
+    ambient: amb, unmanaged, managed, unmanagedKw, managedKw, baseOverLimit,
+    lolSaved: Math.max(0, unmanaged.lolHours - managed.lolHours),
+    peakKwhShifted: shiftedKwh,
+    overLimitUnmanaged: unmanaged.hotSpot.filter(h => h > HOT_SPOT_LIMIT).length * STEP_H,
+    overLimitManaged: managed.hotSpot.filter(h => h > HOT_SPOT_LIMIT).length * STEP_H,
+  };
+}
+
+// green accounting across a plan vs baseline
+function greenOutcomes(network, scenario, planEval, baseEval) {
+  // avoided replacements: transformers whose lol crosses an end-of-life threshold in baseline but not plan
+  const EOL = 1.6; // per-day loss-of-life hours above which a unit is on track to fail early (assumed)
+  let avoided = 0;
+  for (const t of network.transformers) {
+    const pl = planEval.perT[t.id]?.lol ?? 0;
+    const bl = baseEval.perT[t.id]?.lol ?? 0;
+    if (bl >= EOL && pl < EOL) avoided++;
+  }
+  const dieselShare = 0.4; // assumed share of outage hours covered by diesel
+  const dieselHoursAvoided = Math.max(0, baseEval.overloadHours - planEval.overloadHours) * dieselShare;
+  return { avoidedReplacements: avoided, dieselHoursAvoided, EOL, dieselShare };
+}
+</script>
+<script type="text/babel" data-presets="react">
+const { useState, useMemo, useEffect, useRef } = React;
+
+// ---------- helpers ----------
+const fmtL = (inr) => (inr / 1e5).toFixed(1) + "L";
+const BAND_COLOR = { ok: "var(--ok)", watch: "var(--watch)", high: "var(--high)", critical: "var(--critical)" };
+const BAND_LABEL = { ok: "Below 80%", watch: "80–90%", high: "90–100%", critical: "Overloaded" };
+const SCEN_KEYS = ["normal", "hot", "highEV"];
+
+// ---------- feeder map ----------
+const RISK_HEX = { ok: "#2ECC71", watch: "#F2C12E", high: "#F28C28", critical: "#E24C4C" };
+function FeederMap({ network, perT, selected, onSelect, mode, hotSpotById, showEdges = true, showLabels = true }) {
+  const W = 820, H = 70 + Math.ceil(network.transformers.length / 5) * 78 + 24;
+  const colorOf = (t) => {
+    if (mode === "thermal" && hotSpotById) {
+      const hs = hotSpotById[t.id];
+      return hs == null ? "#3A4D42" : hs > 110 ? RISK_HEX.critical : hs > 98 ? RISK_HEX.high : hs > 85 ? RISK_HEX.watch : RISK_HEX.ok;
+    }
+    const info = perT ? perT[t.id] : null;
+    return info ? RISK_HEX[info.band] : "#3A4D42";
+  };
+  return (
+    <svg className="feeder" viewBox={`0 0 ${W} ${H}`} role="img"
+         aria-label="Synthetic distribution feeder; transformers glow by risk">
+      <defs>
+        <filter id="glow" x="-60%" y="-60%" width="220%" height="220%">
+          <feGaussianBlur stdDeviation="3.2" result="b" /><feMerge><feMergeNode in="b" /><feMergeNode in="SourceGraphic" /></feMerge>
+        </filter>
+      </defs>
+      {showEdges && network.edges.map(([a, b], i) => {
+        const ta = network.transformers.find(t => t.id === a);
+        const tb = network.transformers.find(t => t.id === b);
+        if (!ta || !tb) return null;
+        // edge tinted by the worse of its two endpoints
+        const ca = colorOf(ta), cb = colorOf(tb);
+        return <line key={i} x1={ta.x} y1={ta.y} x2={tb.x} y2={tb.y}
+                     stroke={ca === RISK_HEX.critical || cb === RISK_HEX.critical ? "rgba(226,76,76,0.35)" : "rgba(175,203,183,0.18)"}
+                     strokeWidth="2" />;
+      })}
+      {/* substation */}
+      <g>
+        <rect x={network.transformers[0].x - 36} y={network.transformers[0].y - 50} width="72" height="22" rx="6"
+              fill="#0D2619" stroke="rgba(61,205,88,0.4)" />
+        <text x={network.transformers[0].x} y={network.transformers[0].y - 35} textAnchor="middle"
+              fontSize="10.5" fill="var(--green-br)" fontWeight="600">Substation</text>
+      </g>
+      {network.transformers.map(t => {
+        const info = perT ? perT[t.id] : null;
+        const fill = colorOf(t);
+        const sel = selected === t.id;
+        const act = info && info.action && info.action !== "none";
+        const glow = sel || fill === RISK_HEX.critical;
+        return (
+          <g key={t.id} onClick={() => onSelect && onSelect(t.id)} style={{ cursor: onSelect ? "pointer" : "default" }}
+             filter={glow ? "url(#glow)" : undefined}>
+            <circle cx={t.x} cy={t.y} r={sel ? 13 : 10} fill={fill}
+                    stroke={sel ? "#fff" : "rgba(255,255,255,0.25)"} strokeWidth={sel ? 2.5 : 1.5} />
+            {act && <circle cx={t.x + 9} cy={t.y - 9} r="4.5" fill="var(--green-br)" stroke="#04120C" strokeWidth="1.5" />}
+            {showLabels && <text x={t.x} y={t.y + 25} textAnchor="middle" fontSize="9.5" fill="var(--ink-3)">{t.id}</text>}
+          </g>
+        );
+      })}
+    </svg>
+  );
+}
+
+function MapLegend({ mode }) {
+  const items = mode === "thermal"
+    ? [[RISK_HEX.ok, "Cool"], [RISK_HEX.watch, "Warm"], [RISK_HEX.high, "Near limit"], [RISK_HEX.critical, "Over 110°C"]]
+    : [[RISK_HEX.ok, "Below 80%"], [RISK_HEX.watch, "80–90%"], [RISK_HEX.high, "90–100%"], [RISK_HEX.critical, "Overloaded"]];
+  return (
+    <div className="maplegend">
+      {items.map(([c, l]) => <div className="row" key={l}><i style={{ background: c }} />{l}</div>)}
+      <div className="row"><svg width="13" height="13"><circle cx="6.5" cy="6.5" r="4.5" fill="var(--green-br)" stroke="#04120C" strokeWidth="1.5" /></svg>Action applied</div>
+    </div>
+  );
+}
+
+// ---------- Pareto scatter (hand-rolled SVG) ----------
+function ParetoChart({ pareto, selIdx, onPick, baseline }) {
+  const W = 356, H = 210, pad = 40;
+  const xs = pareto.map(p => p.capexInr / 1e5);
+  const ys = pareto.map(p => p.lossOfLifeHours);
+  const allX = xs.concat([baseline.capexInr / 1e5]);
+  const allY = ys.concat([baseline.lossOfLifeHours]);
+  const xmin = Math.min(...allX), xmax = Math.max(...allX);
+  const ymin = Math.min(...allY), ymax = Math.max(...allY);
+  const X = v => pad + (v - xmin) / ((xmax - xmin) || 1) * (W - pad - 14);
+  const Y = v => (H - pad) - (v - ymin) / ((ymax - ymin) || 1) * (H - pad - 14);
+  const ol = pareto.map(p => p.overloadHours);
+  const omax = Math.max(...ol, 1);
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} style={{ width: "100%", height: "auto" }} role="img"
+         aria-label="Pareto front: capex versus loss of life">
+      <defs><filter id="glow" x="-80%" y="-80%" width="260%" height="260%">
+        <feGaussianBlur stdDeviation="2.6" result="b" /><feMerge><feMergeNode in="b" /><feMergeNode in="SourceGraphic" /></feMerge>
+      </filter></defs>
+      <line x1={pad} y1={H - pad} x2={W - 8} y2={H - pad} stroke="rgba(255,255,255,0.12)" />
+      <line x1={pad} y1="10" x2={pad} y2={H - pad} stroke="rgba(255,255,255,0.12)" />
+      <text x={(W + pad) / 2} y={H - 6} textAnchor="middle" fontSize="10.5" fill="var(--ink-3)">Capex (₹ lakh)</text>
+      <text x="12" y={(H - pad) / 2} textAnchor="middle" fontSize="10.5" fill="var(--ink-3)"
+            transform={`rotate(-90 12 ${(H - pad) / 2})`}>Loss of life (h)</text>
+      {/* baseline marker */}
+      <g>
+        <rect x={X(baseline.capexInr / 1e5) - 5} y={Y(baseline.lossOfLifeHours) - 5} width="10" height="10"
+              transform={`rotate(45 ${X(baseline.capexInr / 1e5)} ${Y(baseline.lossOfLifeHours)})`}
+              fillOpacity="0" stroke="#9AA7A0" strokeWidth="1.5" />
+        <text x={X(baseline.capexInr / 1e5)} y={Y(baseline.lossOfLifeHours) - 9} textAnchor="middle"
+              fontSize="9.5" fill="#9AA7A0">baseline</text>
+      </g>
+      {pareto.map((p, i) => {
+        const r = 3 + 5 * (p.overloadHours / omax);
+        const sel = i === selIdx;
+        return <circle key={i} cx={X(p.capexInr / 1e5)} cy={Y(p.lossOfLifeHours)} r={sel ? r + 2 : r}
+                       fill={sel ? "#5FE07A" : "var(--green)"} fillOpacity={sel ? 1 : 0.5}
+                       stroke={sel ? "#fff" : "rgba(255,255,255,0.3)"} strokeWidth={sel ? 2 : 1}
+                       filter={sel ? "url(#glow)" : undefined}
+                       style={{ cursor: "pointer" }} onClick={() => onPick(i)} />;
+      })}
+    </svg>
+  );
+}
+
+// ---------- line chart for temperature / loading ----------
+function LineChart({ series, limit, ambient, ylabel, markers }) {
+  const W = 356, H = 190, pad = 34;
+  const n = series[0].data.length;
+  const all = series.flatMap(s => s.data).concat(ambient || []).concat(limit ? [limit] : []);
+  const ymin = Math.min(...all), ymax = Math.max(...all);
+  const X = i => pad + i / (n - 1) * (W - pad - 10);
+  const Y = v => (H - pad) - (v - ymin) / ((ymax - ymin) || 1) * (H - pad - 12);
+  const path = (data) => data.map((v, i) => (i ? "L" : "M") + X(i).toFixed(1) + " " + Y(v).toFixed(1)).join(" ");
+  const hours = [0, 6, 12, 18, 24];
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} style={{ width: "100%", height: "auto" }} role="img" aria-label={ylabel}>
+      <defs><filter id="lglow" x="-10%" y="-40%" width="120%" height="180%">
+        <feGaussianBlur stdDeviation="2" result="b" /><feMerge><feMergeNode in="b" /><feMergeNode in="SourceGraphic" /></feMerge>
+      </filter></defs>
+      {/* evening peak window shading (drawn first, behind) */}
+      <rect x={X(18 / 24 * (n - 1))} y="8" width={X(22 / 24 * (n - 1)) - X(18 / 24 * (n - 1))} height={H - pad - 8}
+            fill="#F2C12E" fillOpacity="0.09" />
+      <line x1={pad} y1={H - pad} x2={W - 6} y2={H - pad} stroke="rgba(255,255,255,0.12)" />
+      <line x1={pad} y1="8" x2={pad} y2={H - pad} stroke="rgba(255,255,255,0.12)" />
+      {hours.map(h => <text key={h} x={X(h / 24 * (n - 1))} y={H - pad + 13} textAnchor="middle" fontSize="9.5" fill="var(--ink-3)">{h}:00</text>)}
+      <text x="10" y={(H - pad) / 2} textAnchor="middle" fontSize="10" fill="var(--ink-3)"
+            transform={`rotate(-90 10 ${(H - pad) / 2})`}>{ylabel}</text>
+      {limit != null && <>
+        <line x1={pad} y1={Y(limit)} x2={W - 6} y2={Y(limit)} stroke="#E24C4C" strokeWidth="1.2" strokeDasharray="4 3" />
+        <text x={W - 8} y={Y(limit) - 4} textAnchor="end" fontSize="9.5" fill="#E24C4C">limit {limit}°C</text>
+      </>}
+      {ambient && <path d={path(ambient)} fill="none" stroke="rgba(175,203,183,0.4)" strokeWidth="1.3" strokeDasharray="3 3" />}
+      {series.map((s, i) => <path key={i} d={path(s.data)} fill="none" stroke={s.color} strokeWidth="2.4" filter="url(#lglow)" />)}
+    </svg>
+  );
+}
+
+// ---------- convergence ----------
+function Convergence({ history }) {
+  const W = 356, H = 120, pad = 30;
+  const ys = history.map(h => h.quality);
+  const ymin = Math.min(...ys), ymax = Math.max(...ys);
+  const X = i => pad + i / (history.length - 1) * (W - pad - 8);
+  const Y = v => (H - pad) - (v - ymin) / ((ymax - ymin) || 1) * (H - pad - 8);
+  const d = history.map((h, i) => (i ? "L" : "M") + X(i).toFixed(1) + " " + Y(h.quality).toFixed(1)).join(" ");
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} style={{ width: "100%", height: "auto" }} role="img" aria-label="Optimiser convergence">
+      <line x1={pad} y1={H - pad} x2={W - 6} y2={H - pad} stroke="rgba(255,255,255,0.12)" />
+      <path d={d} fill="none" stroke="var(--green-br)" strokeWidth="2.2" />
+      <text x={(W + pad) / 2} y={H - 6} textAnchor="middle" fontSize="9.5" fill="var(--ink-3)">Generation</text>
+    </svg>
+  );
+}
+
+// ---------- green strip ----------
+function GreenStrip({ green, extra }) {
+  const Item = ({ n, u, lab, tip }) => (
+    <div>
+      <div className="lab">{lab}</div>
+      <div className="gstat"><span className="n">{n}</span><span className="u">{u}</span>
+        <span className="info" title={tip}>?</span></div>
+    </div>
+  );
+  return (
+    <div className="greenstrip"><div className="wrap">
+      <Item n={green.avoidedReplacements} u="transformers" lab="Green impact · replacements avoided"
+            tip={`Units whose loss-of-life stays below the end-of-life threshold (${green.EOL} h/day, assumed) under the plan but not the baseline.`} />
+      <Item n={green.dieselHoursAvoided.toFixed(1)} u="hours" lab="Diesel generator hours avoided"
+            tip={`Overload hours prevented × assumed ${Math.round(green.dieselShare * 100)}% served by diesel.`} />
+      {extra && <Item n={extra.kwh} u="kWh/evening" lab="Peak energy shifted to greener hours"
+            tip="Flexible EV and AC load moved out of the 18:00–22:00 evening peak." />}
+    </div></div>
+  );
+}
+
+// ---------- Plan tab ----------
+function PlanTab({ network, scenario, setScenario }) {
+  const [budget, setBudget] = useState({ upgrades: 8, mobileUnits: 3 });
+  const [result, setResult] = useState(null);
+  const [profile, setProfile] = useState("balanced");
+  const [selIdx, setSelIdx] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [hover, setHover] = useState(null);
+
+  const preview = useMemo(() => evaluatePlan(network, scenario, {}), [network, scenario]);
+
+  function run(warm) {
+    setBusy(true);
+    setTimeout(() => {
+      clearSimCache();
+      const r = runPlan(network, scenario, budget, network.seed, 60, 40);
+      setResult(r);
+      const idx = r.pareto.indexOf(r.profiles.balanced);
+      setProfile("balanced"); setSelIdx(idx >= 0 ? idx : 0);
+      setBusy(false);
+    }, 30);
+  }
+
+  const chosen = result && selIdx != null ? result.pareto[selIdx] : null;
+  const perT = chosen ? chosen.perT : preview.perT;
+  const green = useMemo(() => result ? greenOutcomes(network, scenario, chosen, result.baseline) : null,
+    [result, chosen, network, scenario]);
+
+  function pickProfile(key) {
+    setProfile(key);
+    const p = result.profiles[key];
+    setSelIdx(result.pareto.indexOf(p));
+  }
+
+  // reason for the hovered transformer's action
+  const reason = hover && perT[hover] ? perT[hover] : null;
+
+  const steps = [
+    { label: "Load feeder", state: "done" },
+    { label: "Set scenario & budget", state: "done" },
+    { label: "Optimise plans", state: result ? "done" : "active" },
+    { label: "Compare vs baseline", state: result ? "active" : "" },
+  ];
+  const delta = (plan, base) => { if (base === 0) return null; return Math.round((plan - base) / base * 100); };
+
+  return (
+    <>
+      <StepStrip steps={steps} />
+      {green && <GreenStrip green={green} />}
+      <div className="wrap"><main><div className="grid">
+        {/* LEFT: controls */}
+        <div className="railL">
+          <div className="card">
+            <h2>Plan before summer</h2>
+            <div className="sub">Spend a limited upgrade budget.</div>
+            <div className="field">
+              <label>Scenario</label>
+              <div className="seg wrap2">
+                {SCEN_KEYS.map(k => <button key={k} aria-pressed={scenario === k}
+                  onClick={() => { setScenario(k); setResult(null); }}>{SCENARIOS[k].label}</button>)}
+              </div>
+            </div>
+            <div className="field">
+              <label>Upgrades <span className="v">{budget.upgrades}</span></label>
+              <input type="range" min="0" max="16" value={budget.upgrades}
+                onChange={e => setBudget({ ...budget, upgrades: +e.target.value })} />
+            </div>
+            <div className="field">
+              <label>Mobile units <span className="v">{budget.mobileUnits}</span></label>
+              <input type="range" min="0" max="8" value={budget.mobileUnits}
+                onChange={e => setBudget({ ...budget, mobileUnits: +e.target.value })} />
+            </div>
+            <button className="btn" disabled={busy} onClick={() => run(false)}>
+              {busy ? "Optimising…" : result ? "Re-optimise plans" : "Run optimiser"}</button>
+            {result && <div className="hint" style={{ marginTop: 10 }}>
+              Pareto front of {result.pareto.length} plans. Point size = overload hours.</div>}
+          </div>
+          {result && <div className="card" style={{ marginTop: 14 }}>
+            <h2>Optimiser convergence</h2>
+            <div className="sub">Pareto quality over generations.</div>
+            <Convergence history={result.history} />
+          </div>}
+        </div>
+
+        {/* CENTER: map */}
+        <div className="card mapcard">
+          <div className="maphead">
+            <div>
+              <h2>Distribution feeder</h2>
+              <div className="sub">{network.transformers.length} transformers · {SCENARIOS[scenario].label} · tap a node for its reason</div>
+            </div>
+            <span className="simbadge">Simulated data</span>
+          </div>
+          <FeederMap network={network} perT={perT} selected={hover} onSelect={setHover} mode="risk" />
+          <MapLegend mode="risk" />
+          {reason && <div className="maptoggles" style={{ left: "auto", right: 14, top: "auto", bottom: 14, maxWidth: 220 }}>
+            {reason.action !== "none"
+              ? <span><b style={{ color: "#fff" }}>{hover} · {reason.action}</b><br />peak {(reason.peakLoading * 100).toFixed(0)}%, hot-spot {reason.peakHotSpot.toFixed(0)}°C if untouched</span>
+              : <span><b style={{ color: "#fff" }}>{hover}</b><br />no action needed · peak {(reason.peakLoading * 100).toFixed(0)}%</span>}
+          </div>}
+        </div>
+
+        {/* RIGHT: result cards */}
+        <div className="railR">
+          {!result && <div className="card"><h2>Route plans</h2>
+            <div className="sub">Run the optimiser to see the Pareto-optimal plans, scored against the 80% / 90% baseline.</div>
+            <div className="hint">Each plan trades capex against overload hours and transformer loss-of-life.</div>
+          </div>}
+          {result && <>
+            <div className="card" style={{ marginBottom: 12 }}>
+              <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between" }}>
+                <h2>Plan options</h2><span className="ribbon">{result.pareto.length} Pareto-optimal</span>
+              </div>
+              <div className="sub">NSGA-II · {result.pareto.length} plans · deltas vs the 80/90 baseline.</div>
+              <ParetoChart pareto={result.pareto} selIdx={selIdx} onPick={setSelIdx} baseline={result.baseline} />
+            </div>
+            {[["lowestCost", "Lowest cost"], ["balanced", "Balanced"], ["mostReliable", "Most reliable"]].map(([k, l]) => {
+              const p = result.profiles[k]; const b = result.baseline;
+              const dc = delta(p.capexInr, b.capexInr), dl = delta(p.lossOfLifeHours, b.lossOfLifeHours), dov = delta(p.overloadHours, b.overloadHours);
+              const D = (v) => v == null ? null : <span className={"d " + (v <= 0 ? "pos" : "neg")}>{v > 0 ? "+" : ""}{v}%</span>;
+              return (
+                <div key={k} className="rc" aria-pressed={profile === k} onClick={() => pickProfile(k)}>
+                  <div className="rh"><span className="nm">{l}</span>
+                    {k === "lowestCost" && p.capexInr === result.profiles.balanced.capexInr && <span className="pr">cheapest option</span>}</div>
+                  <div className="rg">
+                    <div className="cell"><div className="cl">Capex</div><div className="cv">{fmtL(p.capexInr)} {D(dc)}</div></div>
+                    <div className="cell"><div className="cl">Loss of life</div><div className="cv">{p.lossOfLifeHours.toFixed(1)}h {D(dl)}</div></div>
+                    <div className="cell"><div className="cl">Overload</div><div className="cv">{p.overloadHours.toFixed(0)}h {D(dov)}</div></div>
+                    <div className="cell"><div className="cl">Actions</div><div className="cv">{Object.values(p.perT).filter(x => x.action !== "none").length}</div></div>
+                  </div>
+                </div>
+              );
+            })}
+            <div className="card" style={{ marginTop: 2 }}>
+              <h2>This plan vs the 80% / 90% rule</h2>
+              <div className="sub">Compared at each policy's own cost.</div>
+              <CompareBars plan={chosen} base={result.baseline} />
+            </div>
+          </>}
+        </div>
+      </div></main></div>
+    </>
+  );
+}
+
+function CompareBars({ plan, base }) {
+  const rows = [
+    ["Capex", plan.capexInr / 1e5, base.capexInr / 1e5, "₹L", 1],
+    ["Loss of life", plan.lossOfLifeHours, base.lossOfLifeHours, "h", 1],
+    ["Overload", plan.overloadHours, base.overloadHours, "h", 1],
+  ];
+  const fmt = (v, u) => u === "₹L" ? "₹" + v.toFixed(1) + "L" : v.toFixed(1) + " " + u;
+  return (
+    <div className="cmp">
+      {rows.map(([lab, pv, bv, u]) => {
+        const max = Math.max(pv, bv, 0.0001);
+        return (
+          <div key={lab} className="crow">
+            <div className="cl"><span>{lab}</span><span className="tag">plan vs baseline</span></div>
+            <div className="bar plan"><i style={{ width: (pv / max * 100) + "%" }} /></div>
+            <div className="cl" style={{ margin: "3px 0" }}><span className="tag">this plan</span>
+              <span style={{ fontWeight: 600 }}>{fmt(pv, u)}</span></div>
+            <div className="bar base"><i style={{ width: (bv / max * 100) + "%" }} /></div>
+            <div className="cl" style={{ margin: "3px 0 0" }}><span className="tag">80/90 rule</span>
+              <span>{fmt(bv, u)}</span></div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ---------- Protect tab ----------
+function ProtectTab({ network }) {
+  const [scenario, setScenario] = useState("highEV");
+  const risky = useMemo(() => {
+    // rank transformers by how much their EVENING EV load pushes them toward the limit,
+    // preferring ones where flexible load is the swing factor (base load alone stays under limit).
+    return network.transformers
+      .filter(t => t.evCount >= 2)
+      .map(t => {
+        const un = runProtect(network, scenario, t.id, network.seed);
+        return { id: t.id, swing: un.overLimitUnmanaged, base: un.baseOverLimit };
+      })
+      .filter(x => x.swing > 0 && x.base < 0.6)   // EVs cause the breach, base load does not
+      .sort((a, b) => b.swing - a.swing)
+      .slice(0, 8).map(x => x.id);
+  }, [network, scenario]);
+  const [sel, setSel] = useState(risky[0]);
+  const [managed, setManaged] = useState(true);
+  const [step, setStep] = useState(72); // 18:00
+  const playing = useRef(false);
+  const [, force] = useState(0);
+
+  useEffect(() => { if (!risky.includes(sel)) setSel(risky[0]); }, [risky]);
+
+  const pr = useMemo(() => runProtect(network, scenario, sel, network.seed), [network, scenario, sel]);
+  const hs = managed ? pr.managed.hotSpot : pr.unmanaged.hotSpot;
+
+  function play() {
+    if (playing.current) { playing.current = false; force(x => x + 1); return; }
+    playing.current = true; force(x => x + 1);
+    const tick = () => {
+      if (!playing.current) return;
+      setStep(s => { const n = s + 1; if (n >= 96) { playing.current = false; force(x => x + 1); return 95; } return n; });
+      setTimeout(tick, 60);
+    };
+    tick();
+  }
+
+  const hotSpotNow = {};
+  network.transformers.forEach(t => { hotSpotNow[t.id] = null; });
+  hotSpotNow[sel] = hs[step];
+
+  const hourLabel = (() => { const h = step * 0.25; const hh = Math.floor(h) % 24; const mm = Math.round((h % 1) * 60); return String(hh).padStart(2, "0") + ":" + String(mm).padStart(2, "0"); })();
+
+  const steps = [
+    { label: "Forecast the evening", state: "done" },
+    { label: "Flag at-risk transformer", state: "done" },
+    { label: "Schedule flexible load", state: managed ? "done" : "active" },
+    { label: "Verify under limit", state: managed ? "active" : "" },
+  ];
+
+  return (
+    <>
+      <StepStrip steps={steps} />
+      <GreenStrip
+        green={{ avoidedReplacements: pr.overLimitManaged < pr.overLimitUnmanaged ? 1 : 0,
+                 dieselHoursAvoided: Math.max(0, pr.overLimitUnmanaged - pr.overLimitManaged),
+                 EOL: 1.6, dieselShare: 0.4 }}
+        extra={{ kwh: pr.peakKwhShifted.toFixed(0) }} />
+      <div className="wrap"><main><div className="grid">
+        {/* LEFT: controls */}
+        <div className="railL">
+          <div className="card">
+            <h2>Protect the evening</h2>
+            <div className="sub">Shift flexible EV & AC load within the thermal limit.</div>
+            <div className="field">
+              <label>Scenario</label>
+              <div className="seg wrap2">
+                {SCEN_KEYS.map(k => <button key={k} aria-pressed={scenario === k} onClick={() => setScenario(k)}>{SCENARIOS[k].label}</button>)}
+              </div>
+            </div>
+            <div className="field">
+              <label>At-risk transformer</label>
+              <div className="seg wrap2">
+                {risky.slice(0, 4).map(id => <button key={id} aria-pressed={sel === id} onClick={() => setSel(id)}>{id}</button>)}
+              </div>
+            </div>
+            <div className="field">
+              <label>Control</label>
+              <div className="seg">
+                <button aria-pressed={!managed} onClick={() => setManaged(false)}>Unmanaged</button>
+                <button aria-pressed={managed} onClick={() => setManaged(true)}>Managed</button>
+              </div>
+            </div>
+            <div className="field" style={{ marginBottom: 0 }}>
+              <label>Evening replay</label>
+              <div className="slider-row">
+                <button className="playbtn" onClick={play}>{playing.current ? "❚❚" : "▶"}</button>
+                <input type="range" min="0" max="95" value={step} onChange={e => setStep(+e.target.value)} />
+                <span className="clock">{hourLabel}</span>
+              </div>
+            </div>
+          </div>
+          <div className="card" style={{ marginTop: 14 }}>
+            <h2>Why it works</h2>
+            <div className="hint">{sel} has {pr.sessions} EV sessions tonight. Managed charging fills the cool
+              early-morning hours and trims AC in the hottest window, so every vehicle still finishes by its
+              departure time while the transformer stays under its thermal limit.</div>
+          </div>
+        </div>
+
+        {/* CENTER: map */}
+        <div className="card mapcard">
+          <div className="maphead">
+            <div>
+              <h2>Peak-evening thermal state</h2>
+              <div className="sub">{SCENARIOS[scenario].label} · {sel} selected · {hourLabel}</div>
+            </div>
+            <span className="simbadge">Simulated data</span>
+          </div>
+          <FeederMap network={network} perT={null} selected={sel} onSelect={id => { if (risky.includes(id)) setSel(id); }}
+                     mode="thermal" hotSpotById={hotSpotNow} />
+          <MapLegend mode="thermal" />
+        </div>
+
+        {/* RIGHT: temperature + metrics */}
+        <div className="railR">
+          <div className="card" style={{ marginBottom: 12 }}>
+            <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between" }}>
+              <h2>Hot-spot temperature tonight</h2>
+              <span className="ribbon" style={{ color: managed ? "var(--green-br)" : "var(--neg)", borderColor: managed ? "var(--line-2)" : "rgba(226,76,76,0.4)", background: managed ? "rgba(61,205,88,0.1)" : "rgba(226,76,76,0.1)" }}>{managed ? "Managed" : "Unmanaged"}</span>
+            </div>
+            <div className="sub">Dashed line is ambient. Shaded band is the evening peak.</div>
+            <LineChart ylabel="°C" limit={110} ambient={pr.ambient}
+              series={[{ data: hs, color: managed ? "#5FE07A" : "#E24C4C" }]} />
+          </div>
+          <div className="metric-grid">
+            <div className={"mstat " + (managed ? "good" : "bad")}>
+              <div className="n">{(managed ? pr.overLimitManaged : pr.overLimitUnmanaged).toFixed(1)} h</div>
+              <div className="l">Time over 110°C limit</div></div>
+            <div className="mstat good">
+              <div className="n">{Math.round(pr.onTimeShare * 100)}%</div>
+              <div className="l">EV sessions on time</div></div>
+            <div className="mstat good">
+              <div className="n">{pr.lolSaved.toFixed(1)} h</div>
+              <div className="l">Loss of life saved</div></div>
+            <div className="mstat good">
+              <div className="n">{pr.peakKwhShifted.toFixed(0)}</div>
+              <div className="l">kWh shifted off peak</div></div>
+          </div>
+        </div>
+      </div></main></div>
+    </>
+  );
+}
+
+// ---------- Method tab ----------
+function MethodTab() {
+  return (
+    <div className="wrap"><main><div className="card prose">
+      <h2>What GreenTrafo does</h2>
+      <p>GreenTrafo treats each distribution transformer's thermal life as a budget, and helps a DISCOM spend it
+        before summer (Plan) and protect it during peak evenings (Protect). The goal is a greener, more reliable
+        grid: fewer premature transformer failures, fewer diesel-backed outages, and more headroom for rooftop
+        solar and EV charging.</p>
+
+      <h2>Why this is a green problem</h2>
+      <p>A 2026 CEA advisory says most summer load shedding comes from the distribution network, not generation, and
+        that it is largely avoidable if vulnerable assets are found at least six months ahead. Keeping transformers
+        alive longer avoids the embodied carbon of replacement units, avoids diesel-generator hours during outages,
+        and lets neighbourhoods host more green generation and EVs.</p>
+
+      <h2>How the numbers are produced</h2>
+      <ul>
+        <li><b>Feeder and loads</b> are generated from a seed: about 40 transformers, with evening air-conditioning
+          peaks, EV sessions, and hidden (unsanctioned) load growth.</li>
+        <li><b>Thermal model</b> is a discrete form of the IEEE C57.91 top-oil and hot-spot equations, giving an
+          ageing acceleration factor and loss-of-life per transformer.</li>
+        <li><b>Plan</b> searches action plans (upgrade, rebalance, mobile unit) with a multi-objective evolutionary
+          optimiser, trading capex against overload hours and loss-of-life, and returns a Pareto front.</li>
+        <li><b>Protect</b> schedules flexible EV and AC load for one evening so the hot-spot stays within limit while
+          every EV still finishes by its departure time.</li>
+      </ul>
+
+      <h2>Assumptions and honest limits</h2>
+      <table>
+        <tr><th>Item</th><th>In this demo</th></tr>
+        <tr><td>Data</td><td>All synthetic and seeded. No real DISCOM data is used.</td></tr>
+        <tr><td>Hot-spot temperature</td><td>Estimated from load with the thermal model, not measured.</td></tr>
+        <tr><td>Thermal constants</td><td>Typical IEEE C57.91 values; absolute loss-of-life is approximate, so compare against the baseline rather than reading absolute lifetimes.</td></tr>
+        <tr><td>Power flow</td><td>A lightweight load approximation, not full unbalanced power flow. The real system uses pandapower / OpenDSS.</td></tr>
+        <tr><td>Control path</td><td>Protect is a proposed demand-response design; no live signal to chargers exists today.</td></tr>
+        <tr><td>Green figures</td><td>Diesel share and end-of-life threshold are assumed parameters, shown on each figure.</td></tr>
+      </table>
+
+      <div className="callout">GreenTrafo complements Schneider's ADMS, DERMS and EVlink at the neighbourhood-transformer
+        level. It does not duplicate outage restoration, crew dispatch or building-side load management, which those
+        products already provide.</div>
+    </div></main></div>
+  );
+}
+
+// ---------- step progress strip ----------
+function StepStrip({ steps }) {
+  return (
+    <div className="steps"><div className="wrap">
+      {steps.map((s, i) => (
+        <div key={i} className={"step " + s.state}>
+          <span className="idx">{s.state === "done" ? "✓" : i + 1}</span>{s.label}
+        </div>
+      ))}
+    </div></div>
+  );
+}
+
+// ---------- dark cinematic hero ----------
+function Particles() {
+  const ref = useRef(null);
+  useEffect(() => {
+    const c = ref.current; if (!c) return;
+    const ctx = c.getContext("2d");
+    let raf, W, H, pts;
+    const reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    function resize() {
+      W = c.width = c.offsetWidth * devicePixelRatio;
+      H = c.height = c.offsetHeight * devicePixelRatio;
+      const n = Math.min(90, Math.floor(c.offsetWidth / 16));
+      pts = Array.from({ length: n }, () => ({
+        x: Math.random() * W, y: Math.random() * H,
+        vx: (Math.random() - 0.5) * 0.12 * devicePixelRatio,
+        vy: (Math.random() - 0.5) * 0.12 * devicePixelRatio,
+        r: (Math.random() * 1.6 + 0.4) * devicePixelRatio,
+        a: Math.random() * 0.5 + 0.2,
+      }));
+    }
+    function draw() {
+      ctx.clearRect(0, 0, W, H);
+      for (const p of pts) {
+        p.x += p.vx; p.y += p.vy;
+        if (p.x < 0 || p.x > W) p.vx *= -1;
+        if (p.y < 0 || p.y > H) p.vy *= -1;
+        ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, 7);
+        ctx.fillStyle = `rgba(61,205,88,${p.a})`; ctx.fill();
+      }
+      raf = requestAnimationFrame(draw);
+    }
+    resize(); window.addEventListener("resize", resize);
+    if (reduce) { draw(); cancelAnimationFrame(raf); } else draw();
+    return () => { cancelAnimationFrame(raf); window.removeEventListener("resize", resize); };
+  }, []);
+  return <canvas ref={ref} className="particles" aria-hidden="true" />;
+}
+
+function Hero({ onStart }) {
+  const stats = [["40", "Transformers"], ["39", "Feeder links"], ["3", "Scenarios"], ["3", "Objectives"]];
+  return (
+    <section className="hero">
+      <Particles />
+      <div className="vignette" />
+      <div className="hnav">
+        <div className="logo"><span className="leaf">G</span><b>Green</b><span>Trafo</span></div>
+        <div className="pill"><span className="dot" />Simulated grid · live demo</div>
+      </div>
+      <div className="hbody">
+        <div className="wordmark">
+          <div className="big">G</div>
+          <h1>Green<i>Trafo</i></h1>
+        </div>
+        <div className="tagline">Keep the grid on by making every transformer <em>last longer</em></div>
+        <p className="sub">GreenTrafo treats each distribution transformer's thermal life as a budget — spending it
+          wisely before summer, and protecting it through peak evenings, for a greener, more reliable grid.</p>
+        <div className="stats">
+          {stats.map(([n, l]) => <div className="st" key={l}><div className="n">{n}</div><div className="l">{l}</div></div>)}
+        </div>
+        <div className="ctas">
+          <button className="cta primary" onClick={onStart}>Start planning
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M12 5v14M5 12l7 7 7-7" stroke="#04120C" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" /></svg>
+          </button>
+          <button className="cta ghost" onClick={() => { const el = document.getElementById("method-anchor"); onStart("method"); }}>How it works</button>
+        </div>
+      </div>
+      <div className="scrollcue" onClick={onStart} style={{ cursor: "pointer" }}>
+        <span className="chev" />Scroll to optimise
+      </div>
+    </section>
+  );
+}
+
+// ---------- shell ----------
+function App() {
+  const [tab, setTab] = useState("plan");
+  const [scenario, setScenario] = useState("hot");
+  const network = useMemo(() => buildNetwork(42, 40), []);
+  const appRef = useRef(null);
+
+  function start(which) {
+    if (which === "method") setTab("method");
+    requestAnimationFrame(() => {
+      const el = document.getElementById("app-root");
+      if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  }
+
+  return (
+    <>
+      <Hero onStart={start} />
+      <div id="app-root" ref={appRef}>
+      <header className="top"><div className="wrap"><div className="brand">
+        <div className="mark">G</div>
+        <div>
+          <h1>GreenTrafo</h1>
+          <div className="tag">Green thermal-life budgeting for grid reliability</div>
+        </div>
+        <div className="right">Yuva Yodha 2026 · Grid Reliability<br /><b>Greener grid, longer-lived transformers</b></div>
+      </div></div></header>
+      <nav className="tabs"><div className="wrap">
+        <button aria-selected={tab === "plan"} onClick={() => setTab("plan")}>Plan</button>
+        <button aria-selected={tab === "protect"} onClick={() => setTab("protect")}>Protect</button>
+        <button aria-selected={tab === "method"} onClick={() => setTab("method")}>Method &amp; limits</button>
+      </div></nav>
+      {tab === "plan" && <PlanTab network={network} scenario={scenario} setScenario={setScenario} />}
+      {tab === "protect" && <ProtectTab network={network} />}
+      {tab === "method" && <MethodTab />}
+      <footer>GreenTrafo · simulated prototype · built for the Schneider Electric Yuva Yodha Energy Tech Hackathon 2026</footer>
+      </div>
+    </>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+</script>
+</body></html>

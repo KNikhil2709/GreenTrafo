@@ -1,0 +1,20 @@
+# dependencies
+node_modules/
+vendor/
+
+# build artifacts & scratch
+dist/
+*.log
+.DS_Store
+
+# screenshots / QA
+*.png
+qa.html
+shot*.mjs
+diag.mjs
+test*.mjs
+*.b64
+
+# editor
+.vscode/
+.idea/
