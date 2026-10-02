@@ -11,9 +11,10 @@ TDD is deliberately **not yet built** — that is expected for a hackathon proto
 
 ## Overall
 
-Roughly **40%** of the production TDD is realised, concentrated in the parts that matter for
-a demo: the thermal physics, the two optimisers, the baseline comparison, and the full UI.
-The remaining ~60% is production plumbing (real power flow, API, database, deployment, tests).
+Roughly **45%** of the production TDD is realised. The UI and analytics layer are now
+substantially richer than the initial prototype: both Plan and Protect have comparison
+visualisations, a full transformer detail panel, and CO₂ accounting. The remaining ~55%
+is production plumbing (real power flow, API, database, deployment, tests).
 
 ## By TDD section
 
@@ -28,22 +29,28 @@ The remaining ~60% is production plumbing (real power flow, API, database, deplo
 | 7. System architecture | 🟡 | Prototype is a single-file browser app, not the FastAPI service. Architecture documented for production. |
 | 8. Data model | 🟡 | Entities exist in-memory as JS objects; no SQLite/Parquet persistence. |
 | 9. Simulation engine | 🟡 | IEEE C57.91 thermal model ✅ in JS. Power flow is a lightweight load approximation, **not pandapower/OpenDSS**. |
-| 10. Plan module | ✅ | NSGA-II multi-objective optimiser, Pareto front, 3 profiles, warm-start baseline — all working. |
-| 11. Protect module | 🟡 | Valley-filling scheduler with departure-time + comfort constraints ✅. Not the full cvxpy convex programme. |
+| 10. Plan module | ✅ | NSGA-II multi-objective optimiser, Pareto front, 3 profiles, warm-start baseline — all working. Detail panel + copy summary added. |
+| 11. Protect module | 🟡 | Valley-filling scheduler with departure-time + comfort constraints ✅. Dual-curve comparison chart + EV charge bar chart added. Not the full cvxpy convex programme. |
 | 12. Forecasting | ⬜ | Latent load-growth quantile regression not yet built; unsanctioned growth is a synthetic parameter. |
 | 13. API specification | ⬜ | No REST API; the engine runs in-browser. API is designed in the TDD. |
-| 14. Frontend design | ✅ | Three tabs + dark hero + green-outcomes panel, dark command-center theme. |
+| 14. Frontend design | ✅ | Three tabs + dark hero + green-outcomes panel (now with CO₂ metric). Transformer detail panel, FAQ accordion. Dark command-center theme. |
 | 15. Testing and validation | 🟡 | Engine sanity-checked (scenario gradient, Plan beats baseline, Protect stays under limit). No CI/unit-test suite yet. |
 | 16. Deployment, monitoring, security | 🟡 | Runs locally / as a static page. No Docker, monitoring, or auth (none needed for the demo). |
-| 17. Implementation plan and risks | ✅ | Documented; risks and honest limits shown in the app's Method tab. |
+| 17. Implementation plan and risks | ✅ | Documented; risks and honest limits shown in the app's Method tab + FAQ. |
 
 ## What works today (demo-ready)
 
 - ✅ Seeded synthetic feeder (~40 transformers), three scenarios with a realistic risk gradient
 - ✅ IEEE C57.91 top-oil / hot-spot thermal model → ageing factor → loss-of-life
 - ✅ **Plan**: NSGA-II optimiser, Pareto front, Lowest-cost / Balanced / Most-reliable profiles, deltas vs the 80/90 baseline
-- ✅ **Protect**: evening replay; managed control keeps hot-spot under the 110°C limit (0h over vs ~3h unmanaged), 100% EV on-time, kWh shifted
-- ✅ Green-outcomes accounting (avoided replacements, diesel hours avoided, peak kWh shifted) with visible assumptions
+- ✅ **Plan**: transformer detail panel (tap any node → full-day loading curve, hot-spot, loss-of-life, overload hours)
+- ✅ **Plan**: live NSGA-II generation counter + progress bar during optimisation
+- ✅ **Plan**: 📋 Copy plan summary to clipboard
+- ✅ **Protect**: evening replay with dual hot-spot curve (Managed vs Unmanaged on same chart)
+- ✅ **Protect**: EV charge schedule bar chart (kW per 15-min slot, 16:00–24:00 window)
+- ✅ **Protect**: robust scenario handling — never crashes even when no transformers are strictly at-risk (3-tier fallback)
+- ✅ Green-outcomes accounting: avoided replacements, diesel hours avoided, peak kWh shifted, **CO₂ avoided** (0.82 kgCO₂/kWh CEA 2024)
+- ✅ FAQ accordion in Method & limits tab (5 questions covering data, model, algorithms, product fit)
 - ✅ Dark command-center UI + cinematic hero, Schneider-green theme
 - ✅ Runs entirely on a laptop; reproducible from a seed
 
@@ -64,4 +71,4 @@ The remaining ~60% is production plumbing (real power flow, API, database, deplo
 - Hot-spot temperature is **estimated from load**, not measured.
 - Thermal constants are **typical IEEE values**; report relative improvements, not absolute lifetimes.
 - The DISCOM→charger control path in Protect is a **proposed demand-response design**, not deployed.
-- Green figures depend on **assumed parameters** (diesel share, end-of-life threshold), shown on each figure.
+- Green figures depend on **assumed parameters** (diesel share, end-of-life threshold, CO₂ factor), shown on each figure.
