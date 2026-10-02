@@ -9,7 +9,7 @@ All data is simulated.
 
 ## Links
 
-- **Live demo:** https://claude.ai/code/artifact/JnQzBM7dk13rE81V7pTJ7d
+
 - **Project status (done vs. left):** [STATUS.md](STATUS.md)
 - **Design docs:** [docs/TDD.md](docs/TDD.md) · [docs/PRD.md](docs/PRD.md)
 
