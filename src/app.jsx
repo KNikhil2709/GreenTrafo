@@ -239,9 +239,12 @@ function GreenStrip({ green, extra }) {
   return (
     <div className="greenstrip"><div className="wrap">
       <Item n={green.avoidedReplacements} u="transformers" lab="Green impact · replacements avoided"
-        tip={`Units whose loss-of-life stays below the end-of-life threshold (${green.EOL} h/day, assumed) under the plan but not the baseline.`} />
+        tip={`Units kept below the end-of-life threshold (${green.EOL} h/day, assumed) by this plan versus taking no action.`} />
+      {green.lossOfLifeSaved != null &&
+        <Item n={green.lossOfLifeSaved.toFixed(0)} u="hours" lab="Transformer life saved"
+          tip="Loss-of-life hours this plan avoids versus taking no action across the suburb." />}
       <Item n={green.dieselHoursAvoided.toFixed(1)} u="hours" lab="Diesel generator hours avoided"
-        tip={`Overload hours prevented × assumed ${Math.round(green.dieselShare * 100)}% served by diesel.`} />
+        tip={`Overload hours prevented versus no action × assumed ${Math.round(green.dieselShare * 100)}% served by diesel.`} />
       {extra && <Item n={extra.kwh} u="kWh/evening" lab="Peak energy shifted to greener hours"
         tip="Flexible EV and AC load moved out of the 18:00–22:00 evening peak." />}
       {co2 && <Item n={co2} u="kg CO₂" lab="Carbon avoided (evening shift)"

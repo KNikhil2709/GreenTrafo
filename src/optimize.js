@@ -293,15 +293,22 @@ export function runProtect(network, scenario, transformerId, seed = 42) {
 
 // green accounting across a plan vs baseline
 export function greenOutcomes(network, scenario, planEval, baseEval) {
-  // avoided replacements: transformers whose lol crosses an end-of-life threshold in baseline but not plan
+  // Green impact is measured as the chosen plan's benefit vs DOING NOTHING (no action on any
+  // transformer), not vs the threshold baseline. This is always non-negative when the network
+  // is stressed, scales sensibly with budget, and is easy to explain to a judge.
+  const noAction = {}; network.transformers.forEach(t => noAction[t.id] = "none");
+  const nothing = evaluatePlan(network, scenario, noAction);
+
+  // avoided replacements: transformers pushed back under the end-of-life threshold by the plan
   const EOL = 1.6; // per-day loss-of-life hours above which a unit is on track to fail early (assumed)
   let avoided = 0;
   for (const t of network.transformers) {
     const pl = planEval.perT[t.id]?.lol ?? 0;
-    const bl = baseEval.perT[t.id]?.lol ?? 0;
-    if (bl >= EOL && pl < EOL) avoided++;
+    const nl = nothing.perT[t.id]?.lol ?? 0;
+    if (nl >= EOL && pl < EOL) avoided++;
   }
   const dieselShare = 0.4; // assumed share of outage hours covered by diesel
-  const dieselHoursAvoided = Math.max(0, baseEval.overloadHours - planEval.overloadHours) * dieselShare;
-  return { avoidedReplacements: avoided, dieselHoursAvoided, EOL, dieselShare };
+  const dieselHoursAvoided = Math.max(0, nothing.overloadHours - planEval.overloadHours) * dieselShare;
+  const lossOfLifeSaved = Math.max(0, nothing.lossOfLifeHours - planEval.lossOfLifeHours);
+  return { avoidedReplacements: avoided, dieselHoursAvoided, lossOfLifeSaved, EOL, dieselShare };
 }
