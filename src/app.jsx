@@ -261,11 +261,13 @@ function GreenStrip({ green, extra }) {
 }
 
 // ---------- TransformerDetail (proper component so hooks are valid) ----------
-function TransformerDetail({ transformerId, network, scenario, perT }) {
+function TransformerDetail({ transformerId, network, scenario, perT, forecast }) {
   const t = network.transformers.find(x => x.id === transformerId);
   const info = perT ? perT[transformerId] : null;
-  const daySim = useMemo(() => simulateTransformer(t, scenario), [transformerId, scenario]);
-  const dayBand = useMemo(() => simulateTransformerBand(t, scenario), [transformerId, scenario]);
+  const growth = forecast?.byId?.[transformerId];
+  const medianT = growth ? { ...t, unsanctioned: growth.p50 } : t;
+  const daySim = useMemo(() => simulateTransformer(medianT, scenario), [transformerId, scenario, growth]);
+  const dayBand = useMemo(() => simulateTransformerBand(t, scenario, forecast), [transformerId, scenario, forecast]);
   if (!t) return null;
   const loadBand = { low: dayBand.p10Loading, high: dayBand.p90Loading, color: "rgba(95,224,122,0.18)" };
   const hsBand = { low: dayBand.p10HotSpot, high: dayBand.p90HotSpot, color: "rgba(242,193,46,0.18)" };
@@ -278,6 +280,11 @@ function TransformerDetail({ transformerId, network, scenario, perT }) {
         </span>
       </div>
       <div className="sub" style={{ marginBottom: 8 }}>Age: {t.ageClass} · {info?.action && info.action !== 'none' ? `Action: ${info.action}` : 'No action'}</div>
+
+      {growth && <div className="reason" style={{ marginTop: 0, marginBottom: 10 }}>
+        <b>Latent-load forecast</b> · p10 <b>+{(growth.p10 * 100).toFixed(1)}%</b> · median <b>+{(growth.p50 * 100).toFixed(1)}%</b> · p90 <b>+{(growth.p90 * 100).toFixed(1)}%</b><br />
+        Plan scores this transformer at p90. Charts and metrics below show median demand before any plan action, with the fitted p10–p90 range.
+      </div>}
 
       <div className="sub" style={{ marginBottom: 3 }}>Full-day load · shaded = load-growth uncertainty (p10/p90)</div>
       <LineChart ylabel="Loading (pu)" band={loadBand}
@@ -294,7 +301,7 @@ function TransformerDetail({ transformerId, network, scenario, perT }) {
         <div><div style={{ color: 'var(--ink-3)', fontSize: 10.5, textTransform: 'uppercase' }}>Overload</div><div style={{ fontWeight: 700, fontSize: 15, color: daySim.overloadHours > 0 ? 'var(--neg)' : 'var(--pos)' }}>{daySim.overloadHours.toFixed(1)} h</div></div>
       </div>
       <div className="hint" style={{ marginTop: 8, fontSize: 11 }}>
-        p90 peak: {(Math.max(...dayBand.p90Loading) * 100).toFixed(0)}% loading · {Math.max(...dayBand.p90HotSpot).toFixed(0)}°C hot-spot (assumes +70% hidden load growth)
+        p90 peak: {(Math.max(...dayBand.p90Loading) * 100).toFixed(0)}% loading · {Math.max(...dayBand.p90HotSpot).toFixed(0)}°C hot-spot (fitted +{(dayBand.p90Growth * 100).toFixed(1)}% latent load growth)
       </div>
     </div>
   );
@@ -312,7 +319,11 @@ function PlanTab({ network, scenario, setScenario }) {
   const [hover, setHover] = useState(null);
   const [copied, setCopied] = useState(false);
 
-  const preview = useMemo(() => evaluatePlan(network, scenario, {}), [network, scenario]);
+  const forecast = useMemo(() => buildGrowthForecast(network), [network]);
+  // Plan against an upper-plausible growth outcome; the detail view still exposes
+  // the entire fitted uncertainty range so the conservative choice is explicit.
+  const planningNetwork = useMemo(() => networkAtForecastQuantile(network, forecast, "p90"), [network, forecast]);
+  const preview = useMemo(() => evaluatePlan(planningNetwork, scenario, {}), [planningNetwork, scenario]);
 
   function run() {
     setBusy(true); setBusyGen(0);
@@ -322,7 +333,7 @@ function PlanTab({ network, scenario, setScenario }) {
     const r = { pareto: null, profiles: null, baseline: null, history: [] };
     // We run synchronously in a timeout to not block paint
     setTimeout(() => {
-      const res = runPlan(network, scenario, budget, network.seed, GENS, POP);
+      const res = runPlan(planningNetwork, scenario, budget, network.seed, GENS, POP);
       setResult(res);
       const idx = res.pareto.indexOf(res.profiles.balanced);
       setProfile("balanced"); setSelIdx(idx >= 0 ? idx : 0);
@@ -352,8 +363,8 @@ function PlanTab({ network, scenario, setScenario }) {
 
   const chosen = result && selIdx != null ? result.pareto[selIdx] : null;
   const perT = chosen ? chosen.perT : preview.perT;
-  const green = useMemo(() => result ? greenOutcomes(network, scenario, chosen, result.baseline) : null,
-    [result, chosen, network, scenario]);
+  const green = useMemo(() => result ? greenOutcomes(planningNetwork, scenario, chosen, result.baseline) : null,
+    [result, chosen, planningNetwork, scenario]);
 
   function pickProfile(key) {
     setProfile(key);
@@ -406,6 +417,16 @@ function PlanTab({ network, scenario, setScenario }) {
             {result && !busy && <div className="hint" style={{ marginTop: 10 }}>
               Pareto front of {result.pareto.length} plans. Point size = overload hours.</div>}
           </div>
+          <div className="card" style={{ marginTop: 14 }}>
+            <h2>Growth forecast</h2>
+            <div className="sub">Fitted quantile regression · synthetic calibration</div>
+            <div className="metric-grid">
+              <div className="mstat good"><div className="n">{forecast.calibration.samples}</div><div className="l">synthetic historic readings</div></div>
+              <div className="mstat good"><div className="n">{Math.round(forecast.calibration.coverage * 100)}%</div><div className="l">synthetic p10–p90 coverage</div></div>
+            </div>
+            <div className="hint" style={{ marginTop: 9 }}>Plan uses each transformer's p90 prediction. Tap a feeder node to inspect its p10, median, and p90 forecast.</div>
+            <div className="hint" style={{ marginTop: 9 }}>Synthetic history shares latent growth with the evaluation targets; coverage is not an independent accuracy estimate.</div>
+          </div>
           {result && <div className="card" style={{ marginTop: 14 }}>
             <h2>Optimiser convergence</h2>
             <div className="sub">Pareto quality over generations.</div>
@@ -428,7 +449,7 @@ function PlanTab({ network, scenario, setScenario }) {
 
         {/* RIGHT: result cards + transformer detail */}
         <div className="railR">
-          {hover && <TransformerDetail transformerId={hover} network={network} scenario={scenario} perT={perT} />}
+          {hover && <TransformerDetail transformerId={hover} network={network} scenario={scenario} perT={perT} forecast={forecast} />}
           {!result && <div className="card"><h2>Route plans</h2>
             <div className="sub">Run the optimiser to see the Pareto-optimal plans, scored against the 80% / 90% baseline.</div>
             <div className="hint">Each plan trades capex against overload hours and transformer loss-of-life. Tap any transformer for a detail view.</div>
@@ -724,9 +745,9 @@ function ValidateTab({ network }) {
   return (
     <div className="wrap"><main>
       <div className="card prose" style={{ marginBottom: 16 }}>
-        <h2>TDD §15 Validation experiments</h2>
-        <p className="sub">Five automated checks that verify the engine physics, determinism, and optimiser
-          acceptance criteria from the Technical Design Document. These run entirely in-browser on the current synthetic network.</p>
+        <h2>Prototype validation checks</h2>
+        <p className="sub">Five smoke checks for thermal sanity, determinism, a greedy planning comparison,
+          and sampled Protect outcomes. These run on the current synthetic network; they do not cover the full TDD §15 validation plan.</p>
         <button className="btn-primary" onClick={run} disabled={running} style={{ marginTop: 8 }}>
           {running ? 'Running validation…' : 'Run validation'}
         </button>
@@ -755,7 +776,7 @@ function ValidateTab({ network }) {
 
       {!results && !running && (
         <div className="card" style={{ color: 'var(--ink-3)', textAlign: 'center', padding: 32 }}>
-          Press “Run validation” to execute the 5 TDD §15 experiments.
+          Press “Run validation” to execute the 5 prototype checks.
         </div>
       )}
     </main></div>
@@ -786,6 +807,9 @@ function MethodTab() {
           ageing acceleration factor and loss-of-life per transformer.</li>
         <li><b>Plan</b> searches action plans (upgrade, rebalance, mobile unit) with a multi-objective evolutionary
           optimiser, trading capex against overload hours and loss-of-life, and returns a Pareto front.</li>
+        <li><b>Growth forecast</b> fits p10 / median / p90 latent load growth from six synthetic historical
+          seasonal readings per transformer, using prior peak, cooling share, EV count and neighbourhood-growth proxy.
+          Plan uses p90 conservatively; the detail panel exposes the complete range. Coverage is measured on synthetic targets that share latent growth with the training history, not an independent test set.</li>
         <li><b>Protect</b> schedules flexible EV and AC load for one evening so the hot-spot stays within limit while
           every EV still finishes by its departure time.</li>
       </ul>
@@ -794,6 +818,7 @@ function MethodTab() {
       <table>
         <tr><th>Item</th><th>In this demo</th></tr>
         <tr><td>Data</td><td>All synthetic and seeded. No real DISCOM data is used.</td></tr>
+        <tr><td>Growth forecast</td><td>Browser-based quantile regression trained and calibrated on synthetic historic readings. It demonstrates uncertainty-aware planning; production calibration needs real DISCOM history.</td></tr>
         <tr><td>Hot-spot temperature</td><td>Estimated from load with the thermal model, not measured.</td></tr>
         <tr><td>Thermal constants</td><td>Typical IEEE C57.91 values; absolute loss-of-life is approximate, so compare against the baseline rather than reading absolute lifetimes.</td></tr>
         <tr><td>Power flow</td><td>A lightweight load approximation, not full unbalanced power flow. The real system uses pandapower / OpenDSS.</td></tr>

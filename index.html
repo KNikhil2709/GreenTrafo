@@ -334,6 +334,7 @@ function gauss(r, mu, sd) {
   const u = Math.max(1e-9, r()), v = r();
   return mu + sd * Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
 }
+const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 
 // ---- constants (assumed IEEE C57.91 typical values, see Method tab) ----
 const RATINGS = [100, 200, 250];           // kVA
@@ -360,6 +361,16 @@ function buildNetwork(seed, n = 40) {
     const row = Math.floor(i / perRow);
     const col = i % perRow;
     const peakFactor = 0.62 + r() * 0.55;   // base peak as fraction of rating
+    const acShare = 0.3 + r() * 0.5;
+    const evCount = Math.round((peakFactor - 0.4) * 6 + r() * 3);
+    // These are synthetic versions of features a DISCOM could already hold.  They
+    // drive latent growth, rather than exposing it as a direct forecast input.
+    const neighbourhoodGrowth = 0.02 + r() * 0.10;
+    const unsanctioned = clamp(
+      0.025 + 0.10 * (peakFactor - 0.62) + 0.07 * (acShare - 0.30) +
+      0.025 * (evCount / 6) + 0.25 * neighbourhoodGrowth + gauss(r, 0, 0.018),
+      0.015, 0.30
+    );
     transformers.push({
       id: "T-" + String(i + 1).padStart(2, "0"),
       rating,
@@ -367,10 +378,12 @@ function buildNetwork(seed, n = 40) {
       y: 70 + row * 78 + (r() - 0.5) * 18,
       // intrinsic demand profile params
       peakFactor,
-      acShare: 0.3 + r() * 0.5,         // share of load that is cooling
+      acShare,                           // share of load that is cooling
       // more EVs on busier transformers, so risk and EV load correlate
-      evCount: Math.round((peakFactor - 0.4) * 6 + r() * 3),
-      unsanctioned: r() * 0.16,         // hidden load growth fraction
+      evCount,
+      neighbourhoodGrowth,              // public synthetic growth proxy
+      lastSummerPeak: peakFactor * (1 + unsanctioned) * (0.93 + r() * 0.10),
+      unsanctioned,                     // synthetic truth; also anchors synthetic historical targets
       ageClass: r() < 0.3 ? "old" : r() < 0.7 ? "mid" : "new",
     });
   }
@@ -386,6 +399,97 @@ function buildNetwork(seed, n = 40) {
     }
   }
   return { seed, transformers, edges };
+}
+
+// ---- latent-load-growth forecasting ----
+// A small, deterministic quantile-regression model is trained on synthetic historic
+// observations.  It deliberately uses only planning features, never `unsanctioned`
+// as a direct feature. Synthetic historical targets below share this latent truth,
+// so the reported coverage is not an independent out-of-sample accuracy estimate.
+function growthFeatures(t) {
+  return [t.lastSummerPeak, t.acShare, t.evCount / 8, t.neighbourhoodGrowth];
+}
+
+function fitQuantileRegression(rows, quantile) {
+  const width = rows[0].x.length;
+  const mean = Array.from({ length: width }, (_, j) =>
+    rows.reduce((sum, row) => sum + row.x[j], 0) / rows.length);
+  const scale = mean.map((m, j) => Math.sqrt(rows.reduce((sum, row) =>
+    sum + Math.pow(row.x[j] - m, 2), 0) / rows.length) || 1);
+  const x = rows.map(row => row.x.map((v, j) => (v - mean[j]) / scale[j]));
+  const yMean = rows.reduce((sum, row) => sum + row.y, 0) / rows.length;
+  let intercept = yMean;
+  const weights = new Array(width).fill(0);
+  const learningRate = 0.035;
+  // Batch sub-gradient descent on the pinball loss.  Small data + fixed iterations
+  // keep it transparent, fast, and exactly reproducible in the browser.
+  for (let step = 0; step < 900; step++) {
+    let gi = 0;
+    const gw = new Array(width).fill(0);
+    for (let i = 0; i < rows.length; i++) {
+      const prediction = intercept + weights.reduce((sum, w, j) => sum + w * x[i][j], 0);
+      const gradient = prediction >= rows[i].y ? (1 - quantile) : -quantile;
+      gi += gradient;
+      for (let j = 0; j < width; j++) gw[j] += gradient * x[i][j];
+    }
+    intercept -= learningRate * gi / rows.length;
+    for (let j = 0; j < width; j++) weights[j] -= learningRate * gw[j] / rows.length;
+  }
+  return {
+    predict(features) {
+      return intercept + weights.reduce((sum, w, j) => sum + w * ((features[j] - mean[j]) / scale[j]), 0);
+    }
+  };
+}
+
+function buildGrowthForecast(network) {
+  const r = rng(network.seed * 1597334677);
+  const history = [];
+  // Six historical seasonal readings for every transformer gives a compact but
+  // meaningful calibration set.  The final current-season target stays held out.
+  for (const t of network.transformers) {
+    for (let year = 0; year < 6; year++) {
+      const drift = (year - 2.5) * t.neighbourhoodGrowth * 0.010;
+      history.push({
+        x: [
+          t.lastSummerPeak * (0.94 + r() * 0.12),
+          clamp(t.acShare + gauss(r, 0, 0.025), 0.20, 0.90),
+          clamp((t.evCount + gauss(r, 0, 0.8)) / 8, 0, 1.5),
+          clamp(t.neighbourhoodGrowth + gauss(r, 0, 0.012), 0.005, 0.16),
+        ],
+        y: clamp(t.unsanctioned + drift + gauss(r, 0, 0.020), 0.005, 0.35),
+      });
+    }
+  }
+  const models = { p10: fitQuantileRegression(history, 0.10), p50: fitQuantileRegression(history, 0.50), p90: fitQuantileRegression(history, 0.90) };
+  const byId = {};
+  let pinball = 0, covered = 0;
+  for (const t of network.transformers) {
+    const predictions = ["p10", "p50", "p90"].map(key => clamp(models[key].predict(growthFeatures(t)), 0, 0.35)).sort((a, b) => a - b);
+    const [p10, p50, p90] = predictions;
+    byId[t.id] = { p10, p50, p90 };
+    covered += t.unsanctioned >= p10 && t.unsanctioned <= p90 ? 1 : 0;
+    const err = t.unsanctioned - p50;
+    pinball += err >= 0 ? 0.5 * err : -0.5 * err;
+  }
+  return {
+    byId,
+    calibration: {
+      samples: history.length,
+      coverage: covered / network.transformers.length,
+      medianPinballLoss: pinball / network.transformers.length,
+    },
+  };
+}
+
+function networkAtForecastQuantile(network, forecast, quantile = "p90") {
+  return {
+    ...network,
+    transformers: network.transformers.map(t => ({
+      ...t,
+      unsanctioned: forecast.byId[t.id]?.[quantile] ?? t.unsanctioned,
+    })),
+  };
 }
 
 // ---- scenarios ----
@@ -482,20 +586,27 @@ function simulateTransformer(t, scenario, withGrowth = true) {
   return { ...res, peakLoading, peakHotSpot, ambient: amb };
 }
 
-// p10 / p90 loading band for the detail panel (load-growth uncertainty)
-// p10 = −10% unsanctioned growth, p90 = +15% more growth (beyond the transformer's base value)
-function simulateTransformerBand(t, scenario) {
+// p10 / p90 loading band for the detail panel.  When a fitted forecast is supplied,
+// the band comes from its quantile predictions; the fallback keeps standalone calls
+// backwards-compatible.
+function simulateTransformerBand(t, scenario, growthForecast) {
   const sc = SCENARIOS[scenario];
   const amb = Array.from({ length: DAY_STEPS }, (_, s) => ambientAt(s, sc.ambientPeak));
-  const runAt = (growthMult) => {
-    const tMod = { ...t, unsanctioned: t.unsanctioned * growthMult };
+  const predicted = growthForecast?.byId?.[t.id];
+  const p10Growth = predicted?.p10 ?? t.unsanctioned * 0.5;
+  const p50Growth = predicted?.p50 ?? t.unsanctioned;
+  const p90Growth = predicted?.p90 ?? t.unsanctioned * 1.7;
+  const runAt = (growth) => {
+    const tMod = { ...t, unsanctioned: growth };
     return dayLoadPU(tMod, scenario, true);
   };
-  const p10pu = runAt(0.5);   // conservative: half the unsanctioned growth
-  const p90pu = runAt(1.7);   // pessimistic: 70% more unsanctioned growth
+  const p10pu = runAt(p10Growth);
+  const p50pu = runAt(p50Growth);
+  const p90pu = runAt(p90Growth);
   const p10hs = thermal(p10pu, amb).hotSpot;
+  const p50hs = thermal(p50pu, amb).hotSpot;
   const p90hs = thermal(p90pu, amb).hotSpot;
-  return { p10Loading: p10pu, p90Loading: p90pu, p10HotSpot: p10hs, p90HotSpot: p90hs };
+  return { p10Loading: p10pu, p50Loading: p50pu, p90Loading: p90pu, p10HotSpot: p10hs, p50HotSpot: p50hs, p90HotSpot: p90hs, p10Growth, p50Growth, p90Growth };
 }
 
 
@@ -530,10 +641,11 @@ function actionCost(t, action) {
   return 0;
 }
 
-// cache of per-transformer sims keyed by scenario|id|action (actions are independent)
+// Include every demand/rating input used by applyAction and simulateTransformer.
+// Transformer IDs repeat across seeds and forecast quantiles.
 const simCache = new Map();
 function cachedSim(t, scenario, action) {
-  const key = scenario + "|" + t.id + "|" + action;
+  const key = JSON.stringify([scenario, action, t.rating, t.peakFactor, t.acShare, t.unsanctioned]);
   let v = simCache.get(key);
   if (!v) {
     const tt = applyAction(t, action);
@@ -566,7 +678,7 @@ function evaluatePlan(network, scenario, actions) {
   return { overloadHours: overload, lossOfLifeHours: lol, capexInr: capex, perT };
 }
 
-{ DAY_STEPS, STEP_H, HOT_SPOT_LIMIT, RATINGS, solarAt };
+
 
 // GreenTrafo optimisers: Plan (multi-objective evolutionary) and Protect (greedy MPC).
 
@@ -1300,11 +1412,13 @@ function GreenStrip({ green, extra }) {
 }
 
 // ---------- TransformerDetail (proper component so hooks are valid) ----------
-function TransformerDetail({ transformerId, network, scenario, perT }) {
+function TransformerDetail({ transformerId, network, scenario, perT, forecast }) {
   const t = network.transformers.find(x => x.id === transformerId);
   const info = perT ? perT[transformerId] : null;
-  const daySim = useMemo(() => simulateTransformer(t, scenario), [transformerId, scenario]);
-  const dayBand = useMemo(() => simulateTransformerBand(t, scenario), [transformerId, scenario]);
+  const growth = forecast?.byId?.[transformerId];
+  const medianT = growth ? { ...t, unsanctioned: growth.p50 } : t;
+  const daySim = useMemo(() => simulateTransformer(medianT, scenario), [transformerId, scenario, growth]);
+  const dayBand = useMemo(() => simulateTransformerBand(t, scenario, forecast), [transformerId, scenario, forecast]);
   if (!t) return null;
   const loadBand = { low: dayBand.p10Loading, high: dayBand.p90Loading, color: "rgba(95,224,122,0.18)" };
   const hsBand = { low: dayBand.p10HotSpot, high: dayBand.p90HotSpot, color: "rgba(242,193,46,0.18)" };
@@ -1317,6 +1431,11 @@ function TransformerDetail({ transformerId, network, scenario, perT }) {
         </span>
       </div>
       <div className="sub" style={{ marginBottom: 8 }}>Age: {t.ageClass} · {info?.action && info.action !== 'none' ? `Action: ${info.action}` : 'No action'}</div>
+
+      {growth && <div className="reason" style={{ marginTop: 0, marginBottom: 10 }}>
+        <b>Latent-load forecast</b> · p10 <b>+{(growth.p10 * 100).toFixed(1)}%</b> · median <b>+{(growth.p50 * 100).toFixed(1)}%</b> · p90 <b>+{(growth.p90 * 100).toFixed(1)}%</b><br />
+        Plan scores this transformer at p90. Charts and metrics below show median demand before any plan action, with the fitted p10–p90 range.
+      </div>}
 
       <div className="sub" style={{ marginBottom: 3 }}>Full-day load · shaded = load-growth uncertainty (p10/p90)</div>
       <LineChart ylabel="Loading (pu)" band={loadBand}
@@ -1333,7 +1452,7 @@ function TransformerDetail({ transformerId, network, scenario, perT }) {
         <div><div style={{ color: 'var(--ink-3)', fontSize: 10.5, textTransform: 'uppercase' }}>Overload</div><div style={{ fontWeight: 700, fontSize: 15, color: daySim.overloadHours > 0 ? 'var(--neg)' : 'var(--pos)' }}>{daySim.overloadHours.toFixed(1)} h</div></div>
       </div>
       <div className="hint" style={{ marginTop: 8, fontSize: 11 }}>
-        p90 peak: {(Math.max(...dayBand.p90Loading) * 100).toFixed(0)}% loading · {Math.max(...dayBand.p90HotSpot).toFixed(0)}°C hot-spot (assumes +70% hidden load growth)
+        p90 peak: {(Math.max(...dayBand.p90Loading) * 100).toFixed(0)}% loading · {Math.max(...dayBand.p90HotSpot).toFixed(0)}°C hot-spot (fitted +{(dayBand.p90Growth * 100).toFixed(1)}% latent load growth)
       </div>
     </div>
   );
@@ -1351,7 +1470,11 @@ function PlanTab({ network, scenario, setScenario }) {
   const [hover, setHover] = useState(null);
   const [copied, setCopied] = useState(false);
 
-  const preview = useMemo(() => evaluatePlan(network, scenario, {}), [network, scenario]);
+  const forecast = useMemo(() => buildGrowthForecast(network), [network]);
+  // Plan against an upper-plausible growth outcome; the detail view still exposes
+  // the entire fitted uncertainty range so the conservative choice is explicit.
+  const planningNetwork = useMemo(() => networkAtForecastQuantile(network, forecast, "p90"), [network, forecast]);
+  const preview = useMemo(() => evaluatePlan(planningNetwork, scenario, {}), [planningNetwork, scenario]);
 
   function run() {
     setBusy(true); setBusyGen(0);
@@ -1361,7 +1484,7 @@ function PlanTab({ network, scenario, setScenario }) {
     const r = { pareto: null, profiles: null, baseline: null, history: [] };
     // We run synchronously in a timeout to not block paint
     setTimeout(() => {
-      const res = runPlan(network, scenario, budget, network.seed, GENS, POP);
+      const res = runPlan(planningNetwork, scenario, budget, network.seed, GENS, POP);
       setResult(res);
       const idx = res.pareto.indexOf(res.profiles.balanced);
       setProfile("balanced"); setSelIdx(idx >= 0 ? idx : 0);
@@ -1391,8 +1514,8 @@ function PlanTab({ network, scenario, setScenario }) {
 
   const chosen = result && selIdx != null ? result.pareto[selIdx] : null;
   const perT = chosen ? chosen.perT : preview.perT;
-  const green = useMemo(() => result ? greenOutcomes(network, scenario, chosen, result.baseline) : null,
-    [result, chosen, network, scenario]);
+  const green = useMemo(() => result ? greenOutcomes(planningNetwork, scenario, chosen, result.baseline) : null,
+    [result, chosen, planningNetwork, scenario]);
 
   function pickProfile(key) {
     setProfile(key);
@@ -1445,6 +1568,16 @@ function PlanTab({ network, scenario, setScenario }) {
             {result && !busy && <div className="hint" style={{ marginTop: 10 }}>
               Pareto front of {result.pareto.length} plans. Point size = overload hours.</div>}
           </div>
+          <div className="card" style={{ marginTop: 14 }}>
+            <h2>Growth forecast</h2>
+            <div className="sub">Fitted quantile regression · synthetic calibration</div>
+            <div className="metric-grid">
+              <div className="mstat good"><div className="n">{forecast.calibration.samples}</div><div className="l">synthetic historic readings</div></div>
+              <div className="mstat good"><div className="n">{Math.round(forecast.calibration.coverage * 100)}%</div><div className="l">synthetic p10–p90 coverage</div></div>
+            </div>
+            <div className="hint" style={{ marginTop: 9 }}>Plan uses each transformer's p90 prediction. Tap a feeder node to inspect its p10, median, and p90 forecast.</div>
+            <div className="hint" style={{ marginTop: 9 }}>Synthetic history shares latent growth with the evaluation targets; coverage is not an independent accuracy estimate.</div>
+          </div>
           {result && <div className="card" style={{ marginTop: 14 }}>
             <h2>Optimiser convergence</h2>
             <div className="sub">Pareto quality over generations.</div>
@@ -1467,7 +1600,7 @@ function PlanTab({ network, scenario, setScenario }) {
 
         {/* RIGHT: result cards + transformer detail */}
         <div className="railR">
-          {hover && <TransformerDetail transformerId={hover} network={network} scenario={scenario} perT={perT} />}
+          {hover && <TransformerDetail transformerId={hover} network={network} scenario={scenario} perT={perT} forecast={forecast} />}
           {!result && <div className="card"><h2>Route plans</h2>
             <div className="sub">Run the optimiser to see the Pareto-optimal plans, scored against the 80% / 90% baseline.</div>
             <div className="hint">Each plan trades capex against overload hours and transformer loss-of-life. Tap any transformer for a detail view.</div>
@@ -1763,9 +1896,9 @@ function ValidateTab({ network }) {
   return (
     <div className="wrap"><main>
       <div className="card prose" style={{ marginBottom: 16 }}>
-        <h2>TDD §15 Validation experiments</h2>
-        <p className="sub">Five automated checks that verify the engine physics, determinism, and optimiser
-          acceptance criteria from the Technical Design Document. These run entirely in-browser on the current synthetic network.</p>
+        <h2>Prototype validation checks</h2>
+        <p className="sub">Five smoke checks for thermal sanity, determinism, a greedy planning comparison,
+          and sampled Protect outcomes. These run on the current synthetic network; they do not cover the full TDD §15 validation plan.</p>
         <button className="btn-primary" onClick={run} disabled={running} style={{ marginTop: 8 }}>
           {running ? 'Running validation…' : 'Run validation'}
         </button>
@@ -1794,7 +1927,7 @@ function ValidateTab({ network }) {
 
       {!results && !running && (
         <div className="card" style={{ color: 'var(--ink-3)', textAlign: 'center', padding: 32 }}>
-          Press “Run validation” to execute the 5 TDD §15 experiments.
+          Press “Run validation” to execute the 5 prototype checks.
         </div>
       )}
     </main></div>
@@ -1825,6 +1958,9 @@ function MethodTab() {
           ageing acceleration factor and loss-of-life per transformer.</li>
         <li><b>Plan</b> searches action plans (upgrade, rebalance, mobile unit) with a multi-objective evolutionary
           optimiser, trading capex against overload hours and loss-of-life, and returns a Pareto front.</li>
+        <li><b>Growth forecast</b> fits p10 / median / p90 latent load growth from six synthetic historical
+          seasonal readings per transformer, using prior peak, cooling share, EV count and neighbourhood-growth proxy.
+          Plan uses p90 conservatively; the detail panel exposes the complete range. Coverage is measured on synthetic targets that share latent growth with the training history, not an independent test set.</li>
         <li><b>Protect</b> schedules flexible EV and AC load for one evening so the hot-spot stays within limit while
           every EV still finishes by its departure time.</li>
       </ul>
@@ -1833,6 +1969,7 @@ function MethodTab() {
       <table>
         <tr><th>Item</th><th>In this demo</th></tr>
         <tr><td>Data</td><td>All synthetic and seeded. No real DISCOM data is used.</td></tr>
+        <tr><td>Growth forecast</td><td>Browser-based quantile regression trained and calibrated on synthetic historic readings. It demonstrates uncertainty-aware planning; production calibration needs real DISCOM history.</td></tr>
         <tr><td>Hot-spot temperature</td><td>Estimated from load with the thermal model, not measured.</td></tr>
         <tr><td>Thermal constants</td><td>Typical IEEE C57.91 values; absolute loss-of-life is approximate, so compare against the baseline rather than reading absolute lifetimes.</td></tr>
         <tr><td>Power flow</td><td>A lightweight load approximation, not full unbalanced power flow. The real system uses pandapower / OpenDSS.</td></tr>

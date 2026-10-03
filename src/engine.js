@@ -17,6 +17,7 @@ function gauss(r, mu, sd) {
   const u = Math.max(1e-9, r()), v = r();
   return mu + sd * Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
 }
+const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 
 // ---- constants (assumed IEEE C57.91 typical values, see Method tab) ----
 const RATINGS = [100, 200, 250];           // kVA
@@ -43,6 +44,16 @@ export function buildNetwork(seed, n = 40) {
     const row = Math.floor(i / perRow);
     const col = i % perRow;
     const peakFactor = 0.62 + r() * 0.55;   // base peak as fraction of rating
+    const acShare = 0.3 + r() * 0.5;
+    const evCount = Math.round((peakFactor - 0.4) * 6 + r() * 3);
+    // These are synthetic versions of features a DISCOM could already hold.  They
+    // drive latent growth, rather than exposing it as a direct forecast input.
+    const neighbourhoodGrowth = 0.02 + r() * 0.10;
+    const unsanctioned = clamp(
+      0.025 + 0.10 * (peakFactor - 0.62) + 0.07 * (acShare - 0.30) +
+      0.025 * (evCount / 6) + 0.25 * neighbourhoodGrowth + gauss(r, 0, 0.018),
+      0.015, 0.30
+    );
     transformers.push({
       id: "T-" + String(i + 1).padStart(2, "0"),
       rating,
@@ -50,10 +61,12 @@ export function buildNetwork(seed, n = 40) {
       y: 70 + row * 78 + (r() - 0.5) * 18,
       // intrinsic demand profile params
       peakFactor,
-      acShare: 0.3 + r() * 0.5,         // share of load that is cooling
+      acShare,                           // share of load that is cooling
       // more EVs on busier transformers, so risk and EV load correlate
-      evCount: Math.round((peakFactor - 0.4) * 6 + r() * 3),
-      unsanctioned: r() * 0.16,         // hidden load growth fraction
+      evCount,
+      neighbourhoodGrowth,              // public synthetic growth proxy
+      lastSummerPeak: peakFactor * (1 + unsanctioned) * (0.93 + r() * 0.10),
+      unsanctioned,                     // synthetic truth; also anchors synthetic historical targets
       ageClass: r() < 0.3 ? "old" : r() < 0.7 ? "mid" : "new",
     });
   }
@@ -69,6 +82,97 @@ export function buildNetwork(seed, n = 40) {
     }
   }
   return { seed, transformers, edges };
+}
+
+// ---- latent-load-growth forecasting ----
+// A small, deterministic quantile-regression model is trained on synthetic historic
+// observations.  It deliberately uses only planning features, never `unsanctioned`
+// as a direct feature. Synthetic historical targets below share this latent truth,
+// so the reported coverage is not an independent out-of-sample accuracy estimate.
+function growthFeatures(t) {
+  return [t.lastSummerPeak, t.acShare, t.evCount / 8, t.neighbourhoodGrowth];
+}
+
+function fitQuantileRegression(rows, quantile) {
+  const width = rows[0].x.length;
+  const mean = Array.from({ length: width }, (_, j) =>
+    rows.reduce((sum, row) => sum + row.x[j], 0) / rows.length);
+  const scale = mean.map((m, j) => Math.sqrt(rows.reduce((sum, row) =>
+    sum + Math.pow(row.x[j] - m, 2), 0) / rows.length) || 1);
+  const x = rows.map(row => row.x.map((v, j) => (v - mean[j]) / scale[j]));
+  const yMean = rows.reduce((sum, row) => sum + row.y, 0) / rows.length;
+  let intercept = yMean;
+  const weights = new Array(width).fill(0);
+  const learningRate = 0.035;
+  // Batch sub-gradient descent on the pinball loss.  Small data + fixed iterations
+  // keep it transparent, fast, and exactly reproducible in the browser.
+  for (let step = 0; step < 900; step++) {
+    let gi = 0;
+    const gw = new Array(width).fill(0);
+    for (let i = 0; i < rows.length; i++) {
+      const prediction = intercept + weights.reduce((sum, w, j) => sum + w * x[i][j], 0);
+      const gradient = prediction >= rows[i].y ? (1 - quantile) : -quantile;
+      gi += gradient;
+      for (let j = 0; j < width; j++) gw[j] += gradient * x[i][j];
+    }
+    intercept -= learningRate * gi / rows.length;
+    for (let j = 0; j < width; j++) weights[j] -= learningRate * gw[j] / rows.length;
+  }
+  return {
+    predict(features) {
+      return intercept + weights.reduce((sum, w, j) => sum + w * ((features[j] - mean[j]) / scale[j]), 0);
+    }
+  };
+}
+
+export function buildGrowthForecast(network) {
+  const r = rng(network.seed * 1597334677);
+  const history = [];
+  // Six historical seasonal readings for every transformer gives a compact but
+  // meaningful calibration set.  The final current-season target stays held out.
+  for (const t of network.transformers) {
+    for (let year = 0; year < 6; year++) {
+      const drift = (year - 2.5) * t.neighbourhoodGrowth * 0.010;
+      history.push({
+        x: [
+          t.lastSummerPeak * (0.94 + r() * 0.12),
+          clamp(t.acShare + gauss(r, 0, 0.025), 0.20, 0.90),
+          clamp((t.evCount + gauss(r, 0, 0.8)) / 8, 0, 1.5),
+          clamp(t.neighbourhoodGrowth + gauss(r, 0, 0.012), 0.005, 0.16),
+        ],
+        y: clamp(t.unsanctioned + drift + gauss(r, 0, 0.020), 0.005, 0.35),
+      });
+    }
+  }
+  const models = { p10: fitQuantileRegression(history, 0.10), p50: fitQuantileRegression(history, 0.50), p90: fitQuantileRegression(history, 0.90) };
+  const byId = {};
+  let pinball = 0, covered = 0;
+  for (const t of network.transformers) {
+    const predictions = ["p10", "p50", "p90"].map(key => clamp(models[key].predict(growthFeatures(t)), 0, 0.35)).sort((a, b) => a - b);
+    const [p10, p50, p90] = predictions;
+    byId[t.id] = { p10, p50, p90 };
+    covered += t.unsanctioned >= p10 && t.unsanctioned <= p90 ? 1 : 0;
+    const err = t.unsanctioned - p50;
+    pinball += err >= 0 ? 0.5 * err : -0.5 * err;
+  }
+  return {
+    byId,
+    calibration: {
+      samples: history.length,
+      coverage: covered / network.transformers.length,
+      medianPinballLoss: pinball / network.transformers.length,
+    },
+  };
+}
+
+export function networkAtForecastQuantile(network, forecast, quantile = "p90") {
+  return {
+    ...network,
+    transformers: network.transformers.map(t => ({
+      ...t,
+      unsanctioned: forecast.byId[t.id]?.[quantile] ?? t.unsanctioned,
+    })),
+  };
 }
 
 // ---- scenarios ----
@@ -165,20 +269,27 @@ export function simulateTransformer(t, scenario, withGrowth = true) {
   return { ...res, peakLoading, peakHotSpot, ambient: amb };
 }
 
-// p10 / p90 loading band for the detail panel (load-growth uncertainty)
-// p10 = −10% unsanctioned growth, p90 = +15% more growth (beyond the transformer's base value)
-export function simulateTransformerBand(t, scenario) {
+// p10 / p90 loading band for the detail panel.  When a fitted forecast is supplied,
+// the band comes from its quantile predictions; the fallback keeps standalone calls
+// backwards-compatible.
+export function simulateTransformerBand(t, scenario, growthForecast) {
   const sc = SCENARIOS[scenario];
   const amb = Array.from({ length: DAY_STEPS }, (_, s) => ambientAt(s, sc.ambientPeak));
-  const runAt = (growthMult) => {
-    const tMod = { ...t, unsanctioned: t.unsanctioned * growthMult };
+  const predicted = growthForecast?.byId?.[t.id];
+  const p10Growth = predicted?.p10 ?? t.unsanctioned * 0.5;
+  const p50Growth = predicted?.p50 ?? t.unsanctioned;
+  const p90Growth = predicted?.p90 ?? t.unsanctioned * 1.7;
+  const runAt = (growth) => {
+    const tMod = { ...t, unsanctioned: growth };
     return dayLoadPU(tMod, scenario, true);
   };
-  const p10pu = runAt(0.5);   // conservative: half the unsanctioned growth
-  const p90pu = runAt(1.7);   // pessimistic: 70% more unsanctioned growth
+  const p10pu = runAt(p10Growth);
+  const p50pu = runAt(p50Growth);
+  const p90pu = runAt(p90Growth);
   const p10hs = thermal(p10pu, amb).hotSpot;
+  const p50hs = thermal(p50pu, amb).hotSpot;
   const p90hs = thermal(p90pu, amb).hotSpot;
-  return { p10Loading: p10pu, p90Loading: p90pu, p10HotSpot: p10hs, p90HotSpot: p90hs };
+  return { p10Loading: p10pu, p50Loading: p50pu, p90Loading: p90pu, p10HotSpot: p10hs, p50HotSpot: p50hs, p90HotSpot: p90hs, p10Growth, p50Growth, p90Growth };
 }
 
 
@@ -213,10 +324,11 @@ export function actionCost(t, action) {
   return 0;
 }
 
-// cache of per-transformer sims keyed by scenario|id|action (actions are independent)
+// Include every demand/rating input used by applyAction and simulateTransformer.
+// Transformer IDs repeat across seeds and forecast quantiles.
 const simCache = new Map();
 function cachedSim(t, scenario, action) {
-  const key = scenario + "|" + t.id + "|" + action;
+  const key = JSON.stringify([scenario, action, t.rating, t.peakFactor, t.acShare, t.unsanctioned]);
   let v = simCache.get(key);
   if (!v) {
     const tt = applyAction(t, action);

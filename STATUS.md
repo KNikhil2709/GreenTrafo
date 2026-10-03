@@ -11,11 +11,29 @@ TDD is deliberately **not yet built** — that is expected for a hackathon proto
 
 ## Overall
 
-Roughly **55%** of the production TDD is realised. The prototype now covers both Plan and
-Protect end-to-end with a full TDD §15 validation suite (5/5 experiments pass in-browser),
-a 3-curve Protect comparison (Unmanaged / ToU / Managed), and a p10/p90 load-growth
-uncertainty band. The remaining ~45% is production plumbing (real power flow, API,
-database, deployment).
+The prototype has working Plan and Protect screens, five browser smoke checks,
+a 3-curve Protect comparison (Unmanaged / ToU / Managed), and a fitted p10/p50/p90
+load-growth forecast that Plan uses conservatively. The earlier 60% estimate was informal:
+remaining work includes algorithm constraints, independent forecasting evaluation and
+full TDD validation, as well as power flow, API, persistence and deployment.
+
+## Current checkpoint — v0.5.0 review, 2026-10-03
+
+- Pending changes are the forecasting feature, build script and the review fixes below.
+- Fixed simulation-cache contamination between original networks, forecast quantiles and seeds.
+- Fixed named-export removal in `build.js`; rebuilt both identical HTML entry points.
+- Regression command: `node build.js && node tests/regression.cjs`.
+- Passed five seeds, 15 deterministic Plan cases, 600 Protect cases, ordered forecast bands,
+  cache isolation and the five seed-42 smoke checks. Protect checks cover aggregate energy,
+  reported on-time share and managed vs unmanaged time over the thermal limit.
+- Visible Chrome checks passed: Plan and all profiles in three scenarios, transformer
+  forecast detail, clipboard export, Validate after p90 Plan (5/5), Protect in three
+  scenarios and Method FAQ. No browser runtime exceptions in the completed run.
+- Coverage is synthetic calibration, **not independent forecast accuracy**: historical
+  training targets are generated from the same latent growth used for evaluation.
+- Workflow: read these docs for the next task, update them, demonstrate each completed
+  feature in the browser, then provide commit/push commands. Do not commit or push on the
+  user's behalf. Wait for the user's instruction before starting the next feature.
 
 ## By TDD section
 
@@ -26,16 +44,16 @@ database, deployment).
 | 3. Goals | 🟡 | Reliability, green and explainability goals met in-sim. "Under 10s Plan" met (~240ms). |
 | 4. Non-goals | ✅ | Honoured: no hardware, no real DISCOM integration, no quantum/causal-ML. |
 | 5. Users and actors | ✅ | Planner and operator flows both present (Plan, Protect tabs). |
-| 6. User journey | ✅ | Both journeys implemented end to end in the UI. |
+| 6. User journey | 🟡 | Both screens work; Protect does not yet consume the selected Plan actions. |
 | 7. System architecture | 🟡 | Prototype is a single-file browser app, not the FastAPI service. Architecture documented for production. |
 | 8. Data model | 🟡 | Entities exist in-memory as JS objects; no SQLite/Parquet persistence. |
 | 9. Simulation engine | 🟡 | IEEE C57.91 thermal model ✅ in JS. Power flow is a lightweight load approximation, **not pandapower/OpenDSS**. |
-| 10. Plan module | ✅ | NSGA-II multi-objective optimiser, Pareto front, 3 profiles, warm-start baseline — all working. Detail panel + copy summary added. |
+| 10. Plan module | 🟡 | Evolutionary Pareto search, 3 profiles, detail panel and copy summary work. Limits are upgrade/mobile counts, not a rupee cap. Re-running starts fresh; no warm-start archive. |
 | 11. Protect module | 🟡 | Valley-filling scheduler with departure-time + comfort constraints ✅. Dual-curve comparison chart + EV charge bar chart added. Not the full cvxpy convex programme. |
-| 12. Forecasting | ⬜ | Latent load-growth quantile regression not yet built; unsanctioned growth is a synthetic parameter. |
+| 12. Forecasting | 🟡 | Deterministic p10/p50/p90 quantile regression and p90 Plan inputs work. Coverage is shown; median pinball loss is returned by the engine. Independent evaluation, naive baseline and growth-draw sampling remain. |
 | 13. API specification | ⬜ | No REST API; the engine runs in-browser. API is designed in the TDD. |
 | 14. Frontend design | ✅ | Three tabs + Validate tab + dark hero + green-outcomes panel (CO₂ metric). Transformer detail panel, FAQ accordion. |
-| 15. Testing and validation | ✅ | **5 TDD §15 experiments run in-browser and pass (5/5).** No CI yet. |
+| 15. Testing and validation | 🟡 | Five seed-42 browser smoke checks pass, plus `tests/regression.cjs`. Full TDD experiments and CI remain; the browser Plan check tests a greedy ranking, not the evolutionary optimiser. |
 | 16. Deployment, monitoring, security | 🟡 | Runs locally / as a static page. No Docker, monitoring, or auth (none needed for the demo). |
 | 17. Implementation plan and risks | ✅ | Documented; risks and honest limits shown in the app's Method tab + FAQ. |
 
@@ -44,13 +62,13 @@ database, deployment).
 - ✅ Seeded synthetic feeder (~40 transformers), three scenarios with a realistic risk gradient
 - ✅ IEEE C57.91 top-oil / hot-spot thermal model → ageing factor → loss-of-life
 - ✅ **Plan**: NSGA-II optimiser, Pareto front, Lowest-cost / Balanced / Most-reliable profiles, deltas vs the 80/90 baseline
-- ✅ **Plan**: transformer detail panel with **p10/p90 load-growth uncertainty band** on both loading and hot-spot charts
-- ✅ **Plan**: live NSGA-II generation counter + progress bar during optimisation
+- ✅ **Plan**: fitted **p10/p50/p90 latent-load-growth forecast** from synthetic historic readings; Plan uses p90 conservatively and the detail panel shows p10/p90 loading and hot-spot bands
+- 🟡 **Plan**: progress indicator is cosmetic; optimisation runs synchronously, not in live generation slices
 - ✅ **Plan**: 📋 Copy plan summary to clipboard
 - ✅ **Protect**: evening replay with 3-curve hot-spot chart (Managed / ToU / Unmanaged on same chart)
 - ✅ **Protect**: EV charge schedule bar chart with 3 series (red = Unmanaged, amber = ToU, green = Managed)
 - ✅ **Protect**: robust scenario handling — never crashes even when no transformers are strictly at-risk (3-tier fallback)
-- ✅ **Validate tab** — 5 TDD §15 automation experiments, all passing (5/5 ✔)
+- ✅ **Validate tab** — 5 prototype smoke checks pass at seed 42 (not full TDD acceptance)
 - ✅ Green-outcomes accounting: avoided replacements, diesel hours avoided, peak kWh shifted, **CO₂ avoided** (0.82 kgCO₂/kWh CEA 2024)
 - ✅ FAQ accordion in Method & limits tab (5 questions covering data, model, algorithms, product fit)
 - ✅ Dark command-center UI + cinematic hero, Schneider-green theme
@@ -60,12 +78,24 @@ database, deployment).
 
 1. ⬜ **Real power flow** — port the engine to Python with pandapower; add OpenDSS for LV unbalance.
 2. ⬜ **Convex Protect** — replace the greedy scheduler with the cvxpy rolling-horizon programme.
-3. ⬜ **Forecasting module** — quantile regression for latent load growth, with calibration.
-4. ⬜ **FastAPI backend** — expose `/plan`, `/protect`, `/simulate`, `/benchmark`; move compute server-side.
-5. ⬜ **Persistence** — SQLite run store + Parquet time series; one YAML config with versioning.
-6. ⬜ **Validation suite** — the five experiments in TDD §15, plus unit/regression tests in CI.
-7. ⬜ **Calibration to published statistics** — tie synthetic data to CEA/BIS figures formally.
-8. ⬜ **Deployment** — Docker Compose; hosted backend + frontend.
+3. ⬜ **FastAPI backend** — expose `/plan`, `/protect`, `/simulate`, `/benchmark`; move compute server-side.
+4. ⬜ **Persistence** — SQLite run store + Parquet time series; one YAML config with versioning.
+5. ⬜ **Validation suite** — the five experiments in TDD §15, plus unit/regression tests in CI.
+6. ⬜ **Calibration to published statistics** — tie synthetic data to CEA/BIS figures formally.
+7. ⬜ **Deployment** — Docker Compose; hosted backend + frontend.
+
+## Known gaps to prioritise with the user
+
+- Plan needs a true capex constraint and comparison at equal cost; rebalance actions
+  currently have no count limit. Warm starts and Plan-to-Protect action transfer are absent.
+- Forecast evaluation needs independent historical/current targets and a naive baseline.
+- Protect rounds arrival/departure slots, can revisit a session's slot across cap passes,
+  and wraps overnight charging into a single day. Per-session power/window checks and
+  chronological thermal carry-over are still needed; aggregate regression passes do not prove these.
+- Green accounting in Protect uses simplified proxies; shifting kWh alone does not establish
+  avoided CO₂ without an off-peak emissions comparison.
+- Existing claims about guaranteed thermal safety, live progress, and full validation
+  should be reviewed as those features are addressed.
 
 ## Honest limits (also shown in the app)
 

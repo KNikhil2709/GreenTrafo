@@ -46,7 +46,8 @@ and Babel load from a CDN).
 1. A dark landing hero. Click **Start planning** (or scroll) to drop into the app.
 2. **Plan** — pick a scenario and budget, press **Run optimiser** (watch the live generation
    counter + progress bar), choose a plan from the Pareto front, and compare it with the
-   80% / 90% threshold rule. Tap any transformer on the map for a full detail panel.
+   80% / 90% threshold rule. Plan uses a conservative p90 latent-load-growth forecast; tap
+   any transformer on the map for its p10 / p50 / p90 forecast and full detail panel.
    Use the 📋 Copy button to export the plan summary to clipboard.
 3. **Protect** — pick an at-risk transformer, scrub the heatwave evening. The chart shows
    both **Managed** and **Unmanaged** hot-spot curves simultaneously, plus an EV charge
@@ -74,9 +75,21 @@ After editing anything in `src/`, rebuild the HTML:
 node build.js    # see build.md for the exact build script
 ```
 
-Or use the one-line node command in [build.md](build.md).
+The equivalent build script is documented in [build.md](build.md).
 
-`engine.js` and `optimize.js` are plain ES modules; import and run them in Node directly.
+Run the regression checks after rebuilding:
+
+```bash
+node build.js
+node tests/regression.cjs
+```
+
+The checks exercise the shipped engine across five seeds and all three scenarios,
+including forecast bands, cache isolation, deterministic plans and Protect energy totals.
+They do not establish independent forecast accuracy or full TDD acceptance.
+
+`engine.js` and `optimize.js` use ES module syntax. On Node 18.20, direct imports require
+`--experimental-default-type=module`; the build and regression scripts need no flags.
 
 ## What is real and what is not
 
