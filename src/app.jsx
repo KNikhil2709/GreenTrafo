@@ -183,19 +183,20 @@ function Convergence({ history }) {
 }
 
 // ---------- EV charge schedule bar chart ----------
-function ChargeBar({ unmanagedKw, managedKw, step }) {
+function ChargeBar({ unmanagedKw, managedKw, touKw, step }) {
   const W = 356, H = 100, pad = 28;
   const n = unmanagedKw.length;
   // only show evening window 16:00–24:00 (steps 64–96)
   const startS = 64, endS = 96, span = endS - startS;
-  const allVals = unmanagedKw.slice(startS, endS).concat(managedKw.slice(startS, endS));
+  const allVals = unmanagedKw.slice(startS, endS).concat(managedKw.slice(startS, endS)).concat((touKw || []).slice(startS, endS));
   const maxV = Math.max(...allVals, 0.01);
-  const barW = (W - pad) / span * 0.85;
+  const slotW = (W - pad) / span;
+  const barW = slotW * 0.28;
   const X = i => pad + (i / span) * (W - pad);
   const H2 = H - pad;
   return (
     <svg viewBox={`0 0 ${W} ${H}`} style={{ width: "100%", height: "auto" }} role="img" aria-label="EV charge schedule">
-      <text x={pad} y={10} fontSize="9" fill="var(--ink-3)">EV charging kW (18:00–24:00)</text>
+      <text x={pad} y={10} fontSize="9" fill="var(--ink-3)">EV charging kW (16:00–24:00)</text>
       <line x1={pad} y1={H - pad} x2={W} y2={H - pad} stroke="rgba(255,255,255,0.1)" />
       {[16, 18, 20, 22, 24].map(h => {
         const s = (h * 4) - startS;
@@ -205,22 +206,28 @@ function ChargeBar({ unmanagedKw, managedKw, step }) {
       {Array.from({ length: span }, (_, i) => {
         const si = startS + i;
         const um = unmanagedKw[si] || 0;
+        const to = touKw ? (touKw[si] || 0) : 0;
         const mg = managedKw[si] || 0;
         const isNow = si === step;
+        const xBase = X(i) - barW * 1.5;
         return (
           <g key={i}>
-            <rect x={X(i) - barW} y={H2 - (um / maxV) * H2 + pad / 2 - pad / 2} width={barW * 0.9}
-              height={(um / maxV) * H2} fill="rgba(226,76,76,0.45)" rx="1" opacity={isNow ? 1 : 0.7} />
-            <rect x={X(i)} y={H2 - (mg / maxV) * H2 + pad / 2 - pad / 2} width={barW * 0.9}
-              height={(mg / maxV) * H2} fill="rgba(95,224,122,0.55)" rx="1" opacity={isNow ? 1 : 0.7} />
+            <rect x={xBase} y={H2 - (um / maxV) * H2 + pad / 2 - pad / 2} width={barW}
+              height={(um / maxV) * H2} fill="rgba(226,76,76,0.5)" rx="1" opacity={isNow ? 1 : 0.7} />
+            <rect x={xBase + barW + 1} y={H2 - (to / maxV) * H2 + pad / 2 - pad / 2} width={barW}
+              height={(to / maxV) * H2} fill="rgba(242,193,46,0.6)" rx="1" opacity={isNow ? 1 : 0.7} />
+            <rect x={xBase + barW * 2 + 2} y={H2 - (mg / maxV) * H2 + pad / 2 - pad / 2} width={barW}
+              height={(mg / maxV) * H2} fill="rgba(95,224,122,0.6)" rx="1" opacity={isNow ? 1 : 0.7} />
           </g>
         );
       })}
       <rect x={X((step - startS) - 0.5)} y={pad / 2 - pad / 2} width={2} height={H2} fill="rgba(255,255,255,0.4)" rx="1" />
       <circle cx={24} cy={H - 16} r={4} fill="rgba(226,76,76,0.7)" />
       <text x={32} y={H - 12} fontSize="8.5" fill="var(--ink-3)">Unmanaged</text>
-      <circle cx={100} cy={H - 16} r={4} fill="rgba(95,224,122,0.7)" />
-      <text x={108} y={H - 12} fontSize="8.5" fill="var(--ink-3)">Managed</text>
+      <circle cx={100} cy={H - 16} r={4} fill="rgba(242,193,46,0.8)" />
+      <text x={108} y={H - 12} fontSize="8.5" fill="var(--ink-3)">ToU</text>
+      <circle cx={140} cy={H - 16} r={4} fill="rgba(95,224,122,0.7)" />
+      <text x={148} y={H - 12} fontSize="8.5" fill="var(--ink-3)">Managed</text>
     </svg>
   );
 }
@@ -662,15 +669,16 @@ function ProtectTab({ network }) {
               <h2>Hot-spot temperature tonight</h2>
               <span className="ribbon" style={{ color: managed ? "var(--green-br)" : "var(--neg)", borderColor: managed ? "var(--line-2)" : "rgba(226,76,76,0.4)", background: managed ? "rgba(61,205,88,0.1)" : "rgba(226,76,76,0.1)" }}>{managed ? "Managed" : "Unmanaged"} highlighted</span>
             </div>
-            <div className="sub">Green = Managed · Red = Unmanaged · dashed = ambient · shaded = evening peak.</div>
+            <div className="sub">Green = Managed · Amber = ToU · Red = Unmanaged · dashed = ambient</div>
             <LineChart ylabel="°C" limit={110} ambient={pr.ambient}
               series={[
-                { data: pr.unmanaged.hotSpot, color: managed ? "rgba(226,76,76,0.35)" : "#E24C4C" },
+                { data: pr.unmanaged.hotSpot, color: managed ? "rgba(226,76,76,0.3)" : "#E24C4C" },
+                { data: pr.tou ? pr.tou.hotSpot : [], color: "rgba(242,193,46,0.7)" },
                 { data: pr.managed.hotSpot, color: managed ? "#5FE07A" : "rgba(95,224,122,0.35)" },
               ]} />
             <div style={{ marginTop: 10 }}>
-              <div className="sub" style={{ marginBottom: 4 }}>EV charging kW · Unmanaged vs Managed</div>
-              <ChargeBar unmanagedKw={pr.unmanagedKw} managedKw={pr.managedKw} step={step} />
+              <div className="sub" style={{ marginBottom: 4 }}>EV charging kW · Unmanaged · ToU · Managed</div>
+              <ChargeBar unmanagedKw={pr.unmanagedKw} managedKw={pr.managedKw} touKw={pr.touKw} step={step} />
             </div>
           </div>
           <div className="metric-grid">
@@ -690,6 +698,67 @@ function ProtectTab({ network }) {
         </div>
       </div></main></div>
     </>
+  );
+}
+
+// ---------- Validate tab (TDD §15 validation experiments) ----------
+function ValidateTab({ network }) {
+  const [results, setResults] = React.useState(null);
+  const [running, setRunning] = React.useState(false);
+
+  function run() {
+    setRunning(true); setResults(null);
+    setTimeout(() => {
+      try {
+        const r = runValidation(network);
+        setResults(r);
+      } catch (e) {
+        setResults([{ id: 'error', name: 'Error', description: String(e), passed: false, detail: e.stack || '' }]);
+      }
+      setRunning(false);
+    }, 30); // yield to paint first
+  }
+
+  const passCount = results ? results.filter(r => r.passed).length : 0;
+
+  return (
+    <div className="wrap"><main>
+      <div className="card prose" style={{ marginBottom: 16 }}>
+        <h2>TDD §15 Validation experiments</h2>
+        <p className="sub">Five automated checks that verify the engine physics, determinism, and optimiser
+          acceptance criteria from the Technical Design Document. These run entirely in-browser on the current synthetic network.</p>
+        <button className="btn-primary" onClick={run} disabled={running} style={{ marginTop: 8 }}>
+          {running ? 'Running validation…' : 'Run validation'}
+        </button>
+        {results && (
+          <span style={{ marginLeft: 12, fontWeight: 700, color: passCount === results.length ? 'var(--pos)' : 'var(--neg)' }}>
+            {passCount}/{results.length} passed
+          </span>
+        )}
+      </div>
+
+      {results && results.map(r => (
+        <div key={r.id} className="card" style={{ marginBottom: 10, borderLeft: `3px solid ${r.passed ? 'var(--pos)' : 'var(--neg)'}` }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
+            <span style={{
+              background: r.passed ? 'rgba(61,205,88,0.15)' : 'rgba(226,76,76,0.15)',
+              color: r.passed ? 'var(--pos)' : 'var(--neg)',
+              border: `1px solid ${r.passed ? 'var(--pos)' : 'var(--neg)'}`,
+              borderRadius: 4, padding: '1px 8px', fontSize: 11, fontWeight: 700, flexShrink: 0
+            }}>{r.passed ? '✔ PASS' : '✘ FAIL'}</span>
+            <strong style={{ fontSize: 14 }}>{r.name}</strong>
+          </div>
+          <div className="sub" style={{ marginBottom: 4 }}>{r.description}</div>
+          <div style={{ fontSize: 11.5, color: 'var(--ink-2)', fontFamily: 'monospace', background: 'rgba(0,0,0,0.25)', padding: '4px 8px', borderRadius: 4 }}>{r.detail}</div>
+        </div>
+      ))}
+
+      {!results && !running && (
+        <div className="card" style={{ color: 'var(--ink-3)', textAlign: 'center', padding: 32 }}>
+          Press “Run validation” to execute the 5 TDD §15 experiments.
+        </div>
+      )}
+    </main></div>
   );
 }
 
@@ -882,10 +951,12 @@ function App() {
           <button aria-selected={tab === "plan"} onClick={() => setTab("plan")}>Plan</button>
           <button aria-selected={tab === "protect"} onClick={() => setTab("protect")}>Protect</button>
           <button aria-selected={tab === "method"} onClick={() => setTab("method")}>Method &amp; limits</button>
+          <button aria-selected={tab === "validate"} onClick={() => setTab("validate")}>Validate</button>
         </div></nav>
         {tab === "plan" && <PlanTab network={network} scenario={scenario} setScenario={setScenario} />}
         {tab === "protect" && <ProtectTab network={network} />}
         {tab === "method" && <MethodTab />}
+        {tab === "validate" && <ValidateTab network={network} />}
         <footer>GreenTrafo · simulated prototype · built for the Schneider Electric Yuva Yodha Energy Tech Hackathon 2026</footer>
       </div>
     </>
