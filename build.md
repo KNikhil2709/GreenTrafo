@@ -14,11 +14,10 @@ does not clash with the one in `engine.js`.
 ```js
 const fs = require("fs");
 let eng = fs.readFileSync("src/engine.js","utf8")
-  .replace(/^export\s+/gm,"").replace(/export\s*\{[^}]*\};?/g,"")
-  .replace(/^\{ DAY_STEPS[\s\S]*?\};\s*$/m,"");
+  .replace(/^export\s*\{[^}]*\};?/gm,"").replace(/^export\s+/gm,"");
 let opt = fs.readFileSync("src/optimize.js","utf8")
   .replace(/^import[\s\S]*?from\s+["'][^"']+["'];/gm,"")
-  .replace(/^export\s+/gm,"").replace(/export\s*\{[^}]*\};?/g,"")
+  .replace(/^export\s*\{[^}]*\};?/gm,"").replace(/^export\s+/gm,"")
   .replace(/function rng\(/,"function rng2(")
   .replace(/rng\((seed \* 2246822519)\)/,"rng2($1)");
 const html = fs.readFileSync("src/head.html","utf8")

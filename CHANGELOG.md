@@ -2,6 +2,46 @@
 
 All notable changes to the GreenTrafo prototype are documented here.
 
+## [v0.5.0] — 2026-10-03
+
+### Added
+- **Forecasting module (TDD §12):** deterministic in-browser quantile regression for latent
+  load growth, trained on six synthetic historical seasonal readings for every transformer.
+  - Uses prior summer peak, cooling share, EV count and a neighbourhood-growth proxy; the
+    current season's synthetic truth remains held out from feature inputs.
+  - Produces ordered p10 / p50 / p90 load-growth predictions, calibration coverage and
+    median pinball-loss metrics. Seed 42 produces 240 historical readings and 98% held-out
+    p10–p90 coverage.
+  - **Plan now evaluates p90 growth** to make its recommendation explicitly conservative.
+  - Each transformer detail card reveals its p10, median and p90 forecasts; the loading and
+    hot-spot uncertainty bands now derive from those fitted quantiles rather than fixed
+    multipliers.
+- **Forecast transparency:** a Plan-side forecast card states the training-set size,
+  held-out interval coverage and how the conservative p90 decision is applied. Method &
+  limits now documents the model and its synthetic-data limitation.
+
+### Verified
+- Engine checks confirm deterministic, ordered, bounded quantiles; 96-step forecast bands;
+  p90 Plan inputs; and finite thermal-plan evaluation.
+- Headless Chrome user-flow verification: Plan optimises, transformer detail displays the
+  forecast, and the existing in-browser TDD §15 suite still passes 5/5 without console errors.
+
+### Review fixes — 2026-10-03
+- Fixed a cache collision between original and p90 networks, and between network seeds.
+  Seed 42 Hot summer could reuse 272.1 loss-of-life hours instead of the correct p90
+  value of 361.4, depending on evaluation order.
+- Fixed named-export stripping in the new build script and aligned `build.md`.
+- Added `tests/regression.cjs`: five seeds, 15 deterministic Plan cases and 600 Protect
+  cases, forecast bands, cache isolation, aggregate charging energy and HTML parity.
+- Clarified that forecast coverage is synthetic calibration, not independent held-out
+  accuracy; the synthetic history shares latent growth with evaluation targets.
+- Labelled transformer detail charts/metrics as median demand before plan actions.
+- Corrected the Validate screen and STATUS: five smoke checks do not complete TDD §15.
+  Recorded missing capex constraints, warm starts, independent forecast evaluation and
+  other existing gaps for a later user-approved feature.
+- Rechecked the rebuilt demo in visible Chrome: three-scenario Plan/profile and Protect
+  flows, forecast detail, clipboard, Validate (5/5), and FAQ passed with no runtime exceptions.
+
 ## [v0.4.0] — 2026-10-03
 
 ### Added
