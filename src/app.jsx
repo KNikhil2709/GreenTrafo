@@ -121,14 +121,22 @@ function ParetoChart({ pareto, selIdx, onPick, baseline }) {
 }
 
 // ---------- line chart for temperature / loading ----------
-function LineChart({ series, limit, ambient, ylabel, markers }) {
+function LineChart({ series, limit, ambient, ylabel, markers, band }) {
   const W = 356, H = 190, pad = 34;
+  const allData = series.flatMap(s => s.data);
+  if (band) { allData.push(...band.low, ...band.high); }
   const n = series[0].data.length;
-  const all = series.flatMap(s => s.data).concat(ambient || []).concat(limit ? [limit] : []);
+  const all = allData.concat(ambient || []).concat(limit ? [limit] : []);
   const ymin = Math.min(...all), ymax = Math.max(...all);
   const X = i => pad + i / (n - 1) * (W - pad - 10);
   const Y = v => (H - pad) - (v - ymin) / ((ymax - ymin) || 1) * (H - pad - 12);
   const path = (data) => data.map((v, i) => (i ? "L" : "M") + X(i).toFixed(1) + " " + Y(v).toFixed(1)).join(" ");
+  // band polygon: forward along high, backward along low
+  const bandPath = band ? (() => {
+    const fwd = band.high.map((v, i) => (i ? "L" : "M") + X(i).toFixed(1) + " " + Y(v).toFixed(1)).join(" ");
+    const bwd = band.low.slice().reverse().map((v, i) => "L" + X(band.low.length - 1 - i).toFixed(1) + " " + Y(v).toFixed(1)).join(" ");
+    return fwd + " " + bwd + " Z";
+  })() : null;
   const hours = [0, 6, 12, 18, 24];
   return (
     <svg viewBox={`0 0 ${W} ${H}`} style={{ width: "100%", height: "auto" }} role="img" aria-label={ylabel}>
@@ -143,6 +151,10 @@ function LineChart({ series, limit, ambient, ylabel, markers }) {
       {hours.map(h => <text key={h} x={X(h / 24 * (n - 1))} y={H - pad + 13} textAnchor="middle" fontSize="9.5" fill="var(--ink-3)">{h}:00</text>)}
       <text x="10" y={(H - pad) / 2} textAnchor="middle" fontSize="10" fill="var(--ink-3)"
         transform={`rotate(-90 10 ${(H - pad) / 2})`}>{ylabel}</text>
+      {/* p10/p90 uncertainty band */}
+      {band && bandPath && <path d={bandPath} fill={band.color ?? "rgba(95,224,122,0.12)"} stroke="none" />}
+      {band && <path d={path(band.low)} fill="none" stroke={band.color ?? "rgba(95,224,122,0.35)"} strokeWidth="1" strokeDasharray="3 2" opacity="0.6" />}
+      {band && <path d={path(band.high)} fill="none" stroke={band.color ?? "rgba(95,224,122,0.35)"} strokeWidth="1" strokeDasharray="3 2" opacity="0.6" />}
       {limit != null && <>
         <line x1={pad} y1={Y(limit)} x2={W - 6} y2={Y(limit)} stroke="#E24C4C" strokeWidth="1.2" strokeDasharray="4 3" />
         <text x={W - 8} y={Y(limit) - 4} textAnchor="end" fontSize="9.5" fill="#E24C4C">limit {limit}°C</text>
@@ -243,7 +255,10 @@ function TransformerDetail({ transformerId, network, scenario, perT }) {
   const t = network.transformers.find(x => x.id === transformerId);
   const info = perT ? perT[transformerId] : null;
   const daySim = useMemo(() => simulateTransformer(t, scenario), [transformerId, scenario]);
+  const dayBand = useMemo(() => simulateTransformerBand(t, scenario), [transformerId, scenario]);
   if (!t) return null;
+  const loadBand = { low: dayBand.p10Loading, high: dayBand.p90Loading, color: "rgba(95,224,122,0.18)" };
+  const hsBand = { low: dayBand.p10HotSpot, high: dayBand.p90HotSpot, color: "rgba(242,193,46,0.18)" };
   return (
     <div className="card" style={{ marginBottom: 12 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
@@ -253,16 +268,28 @@ function TransformerDetail({ transformerId, network, scenario, perT }) {
         </span>
       </div>
       <div className="sub" style={{ marginBottom: 8 }}>Age: {t.ageClass} · {info?.action && info.action !== 'none' ? `Action: ${info.action}` : 'No action'}</div>
-      <LineChart ylabel="Loading (pu)" series={[{ data: daySim.loadingPU, color: '#5FE07A' }]} />
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginTop: 8 }}>
+
+      <div className="sub" style={{ marginBottom: 3 }}>Full-day load · shaded = load-growth uncertainty (p10/p90)</div>
+      <LineChart ylabel="Loading (pu)" band={loadBand}
+        series={[{ data: daySim.loadingPU, color: '#5FE07A' }]} />
+
+      <div className="sub" style={{ marginTop: 8, marginBottom: 3 }}>Hot-spot temperature · shaded = growth uncertainty</div>
+      <LineChart ylabel="°C" limit={110} ambient={daySim.ambient} band={hsBand}
+        series={[{ data: daySim.hotSpot, color: '#F2C12E' }]} />
+
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginTop: 10 }}>
         <div><div style={{ color: 'var(--ink-3)', fontSize: 10.5, textTransform: 'uppercase' }}>Peak loading</div><div style={{ fontWeight: 700, color: '#fff', fontSize: 15 }}>{(daySim.peakLoading * 100).toFixed(0)}%</div></div>
         <div><div style={{ color: 'var(--ink-3)', fontSize: 10.5, textTransform: 'uppercase' }}>Peak hot-spot</div><div style={{ fontWeight: 700, fontSize: 15, color: daySim.peakHotSpot > 110 ? 'var(--neg)' : '#fff' }}>{daySim.peakHotSpot.toFixed(0)}°C</div></div>
         <div><div style={{ color: 'var(--ink-3)', fontSize: 10.5, textTransform: 'uppercase' }}>Loss of life</div><div style={{ fontWeight: 700, color: '#fff', fontSize: 15 }}>{daySim.lolHours.toFixed(2)} h/day</div></div>
         <div><div style={{ color: 'var(--ink-3)', fontSize: 10.5, textTransform: 'uppercase' }}>Overload</div><div style={{ fontWeight: 700, fontSize: 15, color: daySim.overloadHours > 0 ? 'var(--neg)' : 'var(--pos)' }}>{daySim.overloadHours.toFixed(1)} h</div></div>
       </div>
+      <div className="hint" style={{ marginTop: 8, fontSize: 11 }}>
+        p90 peak: {(Math.max(...dayBand.p90Loading) * 100).toFixed(0)}% loading · {Math.max(...dayBand.p90HotSpot).toFixed(0)}°C hot-spot (assumes +70% hidden load growth)
+      </div>
     </div>
   );
 }
+
 
 // ---------- Plan tab ----------
 function PlanTab({ network, scenario, setScenario }) {

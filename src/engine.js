@@ -73,9 +73,9 @@ export function buildNetwork(seed, n = 40) {
 
 // ---- scenarios ----
 export const SCENARIOS = {
-  normal:    { label: "Normal summer",  ambientPeak: 34, acGain: 1.0, evGain: 1.0 },
-  hot:       { label: "Hot summer",     ambientPeak: 42, acGain: 1.35, evGain: 1.1 },
-  highEV:    { label: "High EV growth", ambientPeak: 38, acGain: 1.15, evGain: 2.2 },
+  normal: { label: "Normal summer", ambientPeak: 34, acGain: 1.0, evGain: 1.0 },
+  hot: { label: "Hot summer", ambientPeak: 42, acGain: 1.35, evGain: 1.1 },
+  highEV: { label: "High EV growth", ambientPeak: 38, acGain: 1.15, evGain: 2.2 },
 };
 
 // ambient temperature over a day (deg C): cool pre-dawn, hot mid-afternoon
@@ -105,7 +105,7 @@ function dayLoadPU(t, scenario, withGrowth = true) {
     const baseShape = 0.3 + morning + evening;
     // cooling load tracks ambient, strongest in the evening
     const ac = t.acShare * sc.acGain * Math.max(0, (ambientAt(s, sc.ambientPeak) - 28) / 14)
-               * (0.6 + 0.6 * evening);
+      * (0.6 + 0.6 * evening);
     const pu = t.peakFactor * growth * (baseShape + ac) / 1.55;
     out.push(pu);
   }
@@ -133,7 +133,7 @@ export function evSessions(t, scenario, seed) {
 export function thermal(loadingPU, ambientSeries) {
   const hotSpot = [], topOil = [];
   let dTO = TOP_OIL_RISE_RATED * Math.pow(Math.max(0.05, loadingPU[0]), 2 * N_EXP) /
-            Math.pow(1, 2 * N_EXP); // seed oil rise near steady state of first point
+    Math.pow(1, 2 * N_EXP); // seed oil rise near steady state of first point
   dTO = TOP_OIL_RISE_RATED * Math.pow(loadingPU[0] * loadingPU[0], N_EXP);
   let lol = 0, overload = 0;
   const alpha = STEP_H / TAU_OIL_H;
@@ -164,6 +164,23 @@ export function simulateTransformer(t, scenario, withGrowth = true) {
   const peakHotSpot = Math.max(...res.hotSpot);
   return { ...res, peakLoading, peakHotSpot, ambient: amb };
 }
+
+// p10 / p90 loading band for the detail panel (load-growth uncertainty)
+// p10 = −10% unsanctioned growth, p90 = +15% more growth (beyond the transformer's base value)
+export function simulateTransformerBand(t, scenario) {
+  const sc = SCENARIOS[scenario];
+  const amb = Array.from({ length: DAY_STEPS }, (_, s) => ambientAt(s, sc.ambientPeak));
+  const runAt = (growthMult) => {
+    const tMod = { ...t, unsanctioned: t.unsanctioned * growthMult };
+    return dayLoadPU(tMod, scenario, true);
+  };
+  const p10pu = runAt(0.5);   // conservative: half the unsanctioned growth
+  const p90pu = runAt(1.7);   // pessimistic: 70% more unsanctioned growth
+  const p10hs = thermal(p10pu, amb).hotSpot;
+  const p90hs = thermal(p90pu, amb).hotSpot;
+  return { p10Loading: p10pu, p90Loading: p90pu, p10HotSpot: p10hs, p90HotSpot: p90hs };
+}
+
 
 // risk band from peak loading
 export function riskBand(peakLoading) {
@@ -204,8 +221,10 @@ function cachedSim(t, scenario, action) {
   if (!v) {
     const tt = applyAction(t, action);
     const s = simulateTransformer(tt, scenario);
-    v = { band: riskBand(s.peakLoading), peakLoading: s.peakLoading,
-          peakHotSpot: s.peakHotSpot, lol: s.lolHours, overload: s.overloadHours };
+    v = {
+      band: riskBand(s.peakLoading), peakLoading: s.peakLoading,
+      peakHotSpot: s.peakHotSpot, lol: s.lolHours, overload: s.overloadHours
+    };
     simCache.set(key, v);
   }
   return v;
@@ -222,8 +241,10 @@ export function evaluatePlan(network, scenario, actions) {
     const sim = cachedSim(t, scenario, a);
     overload += sim.overload;
     lol += sim.lol;
-    perT[t.id] = { band: sim.band, peakLoading: sim.peakLoading,
-                   peakHotSpot: sim.peakHotSpot, lol: sim.lol, action: a };
+    perT[t.id] = {
+      band: sim.band, peakLoading: sim.peakLoading,
+      peakHotSpot: sim.peakHotSpot, lol: sim.lol, action: a
+    };
   }
   return { overloadHours: overload, lossOfLifeHours: lol, capexInr: capex, perT };
 }
