@@ -10,11 +10,11 @@ const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'playwright-core')
     const page = await context.newPage();
     const errors = [];
     page.on('pageerror', error => errors.push(error.message));
-    await page.goto('http://127.0.0.1:3000');
+    await page.goto('http://127.0.0.1:3000/?budget=' + Date.now());
     await page.getByRole('button', {name: 'Start planning', exact: true}).click();
     const summary = page.getByTestId('budget-summary');
     async function run() {
-      await page.getByRole('button', {name: /^(Run optimiser|Re-optimise plans)$/}).click();
+      await page.getByRole('button', {name: /^(Run optimiser|Re-optimise plans|Re-plan from previous plans)$/}).click();
       await summary.waitFor({state: 'visible'});
     }
     async function cap(lakhs) {

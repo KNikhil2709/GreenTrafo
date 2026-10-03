@@ -17,7 +17,8 @@ TDD is deliberately **not yet built** — that is expected for a hackathon proto
   and profiles, transformer details, Pareto selection, budget controls, clipboard, all
   Protect scenarios/selection/modes/replay, Method FAQs and Validate. Check responsive
   layouts, runtime/console errors and failed requests. Use `tests/browser-budget.cjs`
-  and `tests/browser-full.cjs` as the repeatable walkthroughs.
+  and `tests/browser-full.cjs` as the repeatable walkthroughs, plus feature-specific
+  browser checks such as `tests/browser-warm-start.cjs`.
 - Fix discovered UI regressions and rerun affected checks; document remaining model gaps.
 - Only after verification, provide commit/push commands, then stop until the user asks
   for the next feature. Do not commit or push on the user's behalf.
@@ -30,7 +31,33 @@ load-growth forecast that Plan uses conservatively. The earlier 60% estimate was
 remaining work includes algorithm constraints, independent forecasting evaluation and
 full TDD validation, as well as power flow, API, persistence and deployment.
 
-## Current checkpoint — v0.6.0 capex budget, 2026-10-04
+## Current checkpoint — v0.7.0 warm-start re-planning, 2026-10-04
+
+- Budget/resource changes retain a compatible Pareto archive and offer **Re-plan from
+  previous plans**: 20 generations instead of the fresh search's 60.
+- Reused actions are cloned, repaired under the new money/count limits, deduplicated and
+  evaluated again. At most half the population comes from the archive; the baseline and
+  fresh random candidates remain. Scenario/network/seed/version mismatches are rejected.
+- UI reports measured search time, reused plans and how many reused plans needed repair.
+  Removed the cosmetic generation counter; compute remains synchronous. Errors recover
+  to an enabled fresh-run button; pending runs are cancelled when leaving Plan.
+- Archive exists only while Plan stays mounted. Scenario changes and reruns with unchanged
+  settings start fresh. A warm run is deterministic for fixed inputs and archive, but is
+  not guaranteed to outperform a longer fresh search.
+- Engine regression and budget tests passed. Warm-start checks passed 45 re-plans across
+  three seeds × three scenarios, including zero-to-high budgets, count constraints,
+  archive immutability, actual reuse, mismatch rejection and non-dominance. Slowest warm
+  engine run in this test was 182 ms, below the 5-second target on this machine.
+- Feature browser checks passed budget decrease/zero/increase, both resource limits,
+  scenario/tab reset, fresh reruns, clipboard and error recovery. Measured warm click-to-result
+  times were 139–155 ms in this run; desktop/mobile screenshots inspected.
+- Full visible-Chrome budget and website suites passed on the final build: 120 detail
+  views, all scenarios/profiles, Pareto/export, Protect selection/modes/replay, FAQs,
+  repeated validation, all tabs at three screen widths and both HTML entry points.
+  No console/runtime errors or failed network requests in the completed full walkthrough.
+- Next candidate feature: Plan-to-Protect action transfer. Wait for the user's instruction.
+
+## Previous checkpoint — v0.6.0 capex budget, 2026-10-04
 
 - Implemented one feature: a hard INR cap for Plan, covering upgrades, mobile units and
   rebalancing. Upgrade/mobile count limits remain additional resource constraints.
@@ -85,7 +112,7 @@ full TDD validation, as well as power flow, API, persistence and deployment.
 | 7. System architecture | 🟡 | Prototype is a single-file browser app, not the FastAPI service. Architecture documented for production. |
 | 8. Data model | 🟡 | Entities exist in-memory as JS objects; no SQLite/Parquet persistence. |
 | 9. Simulation engine | 🟡 | IEEE C57.91 thermal model ✅ in JS. Power flow is a lightweight load approximation, **not pandapower/OpenDSS**. |
-| 10. Plan module | 🟡 | Evolutionary Pareto search, 3 profiles, detail panel and copy summary work. Hard rupee cap covers all actions; baseline shares cap and resource limits. Actual spending may differ. Re-running starts fresh; no warm-start archive. |
+| 10. Plan module | 🟡 | Pareto search, profiles, hard rupee/count caps, same-cap baseline and warm-start budget re-planning work. Actual spending may differ; archives are in-memory and search is approximate. |
 | 11. Protect module | 🟡 | Valley-filling scheduler with departure-time + comfort constraints ✅. Dual-curve comparison chart + EV charge bar chart added. Not the full cvxpy convex programme. |
 | 12. Forecasting | 🟡 | Deterministic p10/p50/p90 quantile regression and p90 Plan inputs work. Coverage is shown; median pinball loss is returned by the engine. Independent evaluation, naive baseline and growth-draw sampling remain. |
 | 13. API specification | ⬜ | No REST API; the engine runs in-browser. API is designed in the TDD. |
@@ -100,7 +127,8 @@ full TDD validation, as well as power flow, API, persistence and deployment.
 - ✅ IEEE C57.91 top-oil / hot-spot thermal model → ageing factor → loss-of-life
 - ✅ **Plan**: NSGA-II optimiser, Pareto front, Lowest-cost / Balanced / Most-reliable profiles, deltas vs the 80/90 baseline
 - ✅ **Plan**: fitted **p10/p50/p90 latent-load-growth forecast** from synthetic historic readings; Plan uses p90 conservatively and the detail panel shows p10/p90 loading and hot-spot bands
-- 🟡 **Plan**: progress indicator is cosmetic; optimisation runs synchronously, not in live generation slices
+- ✅ **Plan**: warm-start budget/resource re-planning with actual elapsed time and archive reuse counts
+- 🟡 **Plan**: optimisation runs synchronously with a busy state, not live generation slices
 - ✅ **Plan**: 📋 Copy plan summary to clipboard
 - ✅ **Plan**: hard INR cap across all actions, same-cap baseline, spend/unspent totals and zero-budget handling
 - ✅ **Protect**: evening replay with 3-curve hot-spot chart (Managed / ToU / Unmanaged on same chart)
@@ -125,8 +153,8 @@ full TDD validation, as well as power flow, API, persistence and deployment.
 ## Known gaps to prioritise with the user
 
 - Plan now enforces a true capex constraint, including rebalance costs. Exact equal-spend
-  comparisons remain distinct from the implemented same-cap comparison. Warm starts and
-  Plan-to-Protect action transfer are absent.
+  comparisons remain distinct from the implemented same-cap comparison. Warm starts are
+  implemented; Plan-to-Protect action transfer is absent.
 - Forecast evaluation needs independent historical/current targets and a naive baseline.
 - Protect rounds arrival/departure slots, can revisit a session's slot across cap passes,
   and wraps overnight charging into a single day. Per-session power/window checks and

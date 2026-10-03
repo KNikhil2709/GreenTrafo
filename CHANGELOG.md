@@ -2,6 +2,35 @@
 
 All notable changes to the GreenTrafo prototype are documented here.
 
+## [v0.7.0] — 2026-10-04
+
+### Added
+- Warm-start re-planning when capex or upgrade/mobile limits change: reuse a sample of the
+  prior Pareto archive, repair it to fit the new constraints, and search for 20 generations.
+- Versioned archive identity covering the network, scenario and optimiser seed; mismatches
+  and invalid action plans are rejected. Reused actions are cloned and re-evaluated.
+- Search summary with measured runtime, reuse/repair counts and generation count, also
+  included in clipboard export. Scenario changes and unchanged-setting reruns start fresh.
+- `tests/plan-warm-start.cjs` and `tests/browser-warm-start.cjs` for deterministic reuse,
+  feasibility, zero-budget recovery, compatibility, UI reset and computation-error recovery.
+
+### Changed
+- Replaced the cosmetic generation counter with an honest busy state. Pending computation
+  is cancelled on Plan unmount; failures clear the archive and allow a fresh retry.
+- Existing browser suites recognise the warm-start button and use fresh HTML requests.
+
+### Verified
+- Existing five-seed regression and budget boundary suites passed.
+- 45 deterministic warm re-plans across three seeds/all scenarios passed, including
+  immutable archives, action re-evaluation and non-dominance. Slowest engine run: 182 ms.
+- Visible Chrome feature checks passed, including injected computation failure/recovery;
+  warm click-to-result times 139–155 ms in this run. Desktop/mobile screenshots inspected.
+- Full budget and website browser suites passed: 120 detail views, all Plan/Protect
+  scenarios and controls, FAQs, validation, three responsive widths and both entry points.
+  No console/runtime errors or failed requests in the completed full walkthrough.
+- Timing is machine-specific; warm starts do not guarantee better solutions than fresh
+  searches, and this does not establish full production TDD acceptance.
+
 ## [v0.6.0] — 2026-10-04
 
 ### Full-site review follow-up

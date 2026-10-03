@@ -18,7 +18,7 @@ const {chromium} = require(process.env.PLAYWRIGHT_MODULE || 'playwright-core');
       assert.equal(await page.locator('svg [d*="NaN"], svg [cx="NaN"], svg [cy="NaN"]').count(), 0);
     }
     async function run() {
-      await page.getByRole('button', {name: /^(Run optimiser|Re-optimise plans)$/}).click();
+      await page.getByRole('button', {name: /^(Run optimiser|Re-optimise plans|Re-plan from previous plans)$/}).click();
       await button('Re-optimise plans').waitFor();
     }
     await page.setViewportSize({width: 1440, height: 1000});
