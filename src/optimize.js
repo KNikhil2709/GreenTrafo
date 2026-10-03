@@ -139,12 +139,48 @@ function thresholdPlan(network, scenario, budget) {
   return a;
 }
 
-export function runPlan(network, scenario, budget, seed = 42, gens = 60, pop = 40) {
+// Archive identity includes the ordered network, scenario, optimiser seed and model
+// version. Budget is deliberately excluded: changing it is the warm-start use case.
+const PLAN_ARCHIVE_VERSION = 1;
+function planContext(network, scenario, seed) {
+  return JSON.stringify([PLAN_ARCHIVE_VERSION, network, scenario, seed]);
+}
+
+function archiveSeeds(network, archive, context, budget, limit) {
+  if (archive.version !== PLAN_ARCHIVE_VERSION || archive.context !== context)
+    throw new RangeError("Warm-start archive does not match this network, scenario or seed");
+  if (!Array.isArray(archive.plans) || !archive.plans.length)
+    throw new RangeError("Warm-start archive must contain action plans");
+  const candidates = [], seen = new Set();
+  for (const actions of archive.plans) {
+    if (!actions || Object.keys(actions).length !== network.transformers.length ||
+        network.transformers.some(t => !Object.hasOwn(actions, t.id) || !ACTIONS.includes(actions[t.id])))
+      throw new RangeError("Warm-start archive contains invalid transformer actions");
+    // Clone and re-evaluate; never reuse old metrics or mutate the supplied archive.
+    const repaired = repair(network, { ...actions }, budget);
+    const key = network.transformers.map(t => repaired[t.id]).join("|");
+    if (!seen.has(key)) {
+      seen.add(key);
+      candidates.push({ actions: repaired, repaired: network.transformers.some(t => repaired[t.id] !== actions[t.id]) });
+    }
+  }
+  // Sample across the cost-sorted archive, including both extremes. Leave half
+  // the population for fresh exploration rather than filling it with old plans.
+  const count = Math.min(limit, candidates.length);
+  return Array.from({ length: count }, (_, i) => candidates[count === 1 ? 0 : Math.round(i * (candidates.length - 1) / (count - 1))]);
+}
+
+export function runPlan(network, scenario, budget, seed = 42, gens = 60, pop = 40, options = {}) {
   validatePlanBudget(budget);
+  if (!Number.isSafeInteger(gens) || gens < 1 || !Number.isSafeInteger(pop) || pop < 2)
+    throw new RangeError("Plan requires at least one generation and two candidates");
+  const context = planContext(network, scenario, seed);
+  const reused = options.archive ? archiveSeeds(network, options.archive, context, budget, Math.floor(pop / 2)) : [];
   const r = rng(seed * 2246822519);
   let population = Array.from({ length: pop }, () => randomPlan(network, budget, r));
   // seed in the threshold plan too
   population[0] = thresholdPlan(network, scenario, budget);
+  reused.forEach((candidate, i) => { population[i + 1] = candidate.actions; });
   const history = [];
   let objs = population.map(p => objectives(network, scenario, p).obj);
 
@@ -216,7 +252,12 @@ export function runPlan(network, scenario, budget, seed = 42, gens = 60, pop = 4
     overloadHours: baseEval.overloadHours, lossOfLifeHours: baseEval.lossOfLifeHours, perT: baseEval.perT
   };
 
-  return { pareto, profiles: { lowestCost, mostReliable, balanced }, baseline, history, budget: { ...budget } };
+  return {
+    pareto, profiles: { lowestCost, mostReliable, balanced }, baseline, history, budget: { ...budget },
+    search: { mode: reused.length ? "warm" : "fresh", reusedPlans: reused.length,
+      repairedPlans: reused.filter(p => p.repaired).length, generations: gens },
+    archive: { version: PLAN_ARCHIVE_VERSION, context, plans: pareto.map(p => ({ ...p.actions })) },
+  };
 }
 
 // ---- Protect: schedule flexible EV + AC on one transformer for the evening ----

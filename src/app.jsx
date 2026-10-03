@@ -315,7 +315,10 @@ function PlanTab({ network, scenario, setScenario }) {
   const [profile, setProfile] = useState("balanced");
   const [selIdx, setSelIdx] = useState(null);
   const [busy, setBusy] = useState(false);
-  const [busyGen, setBusyGen] = useState(0);
+  const [runError, setRunError] = useState(null);
+  const previousRun = useRef(null);
+  const runTimer = useRef(null);
+  useEffect(() => () => clearTimeout(runTimer.current), []);
   const [hover, setHover] = useState(null);
   const [copied, setCopied] = useState(false);
 
@@ -327,27 +330,32 @@ function PlanTab({ network, scenario, setScenario }) {
 
   function changeBudget(key, value) {
     setBudget(current => ({ ...current, [key]: value }));
-    setResult(null); setSelIdx(null); setCopied(false);
+    setResult(null); setSelIdx(null); setCopied(false); setRunError(null);
   }
 
+  const canWarmStart = previousRun.current && previousRun.current.network === planningNetwork &&
+    previousRun.current.scenario === scenario &&
+    Object.keys(budget).some(key => budget[key] !== previousRun.current.result.budget[key]);
+
   function run() {
-    setBusy(true); setBusyGen(0);
-    const GENS = 60, POP = 40;
-    // Run in slices so we can show progress
-    clearSimCache();
-    const r = { pareto: null, profiles: null, baseline: null, history: [] };
-    // We run synchronously in a timeout to not block paint
-    setTimeout(() => {
-      const res = runPlan(planningNetwork, scenario, budget, network.seed, GENS, POP);
-      setResult(res);
-      const idx = res.pareto.indexOf(res.profiles.balanced);
-      setProfile("balanced"); setSelIdx(idx >= 0 ? idx : 0);
-      setBusy(false); setBusyGen(GENS);
+    setBusy(true); setRunError(null); setCopied(false);
+    const archive = canWarmStart ? previousRun.current.result.archive : null;
+    // Yield once so the busy state paints; the search itself is synchronous.
+    // Warm starts retain valid simulation cache entries and use 20 generations.
+    if (!archive) clearSimCache();
+    runTimer.current = setTimeout(() => {
+      try {
+        const started = performance.now();
+        const res = runPlan(planningNetwork, scenario, budget, network.seed, archive ? 20 : 60, 40, { archive });
+        const elapsedMs = performance.now() - started;
+        previousRun.current = { network: planningNetwork, scenario, result: res };
+        setResult({ ...res, elapsedMs });
+        const idx = res.pareto.indexOf(res.profiles.balanced);
+        setProfile("balanced"); setSelIdx(idx >= 0 ? idx : 0);
+      } catch (error) {
+        setRunError(error.message); setResult(null); previousRun.current = null;
+      } finally { setBusy(false); }
     }, 30);
-    // Fake tick progress (visual only — actual work is synchronous)
-    let g = 0;
-    const tick = () => { g += 4; setBusyGen(Math.min(g, GENS - 2)); if (g < GENS - 4) setTimeout(tick, 55); };
-    setTimeout(tick, 60);
   }
 
   function copyPlan() {
@@ -357,6 +365,7 @@ function PlanTab({ network, scenario, setScenario }) {
       `Simulated data; assumed action costs`,
       `Scenario: ${SCENARIOS[scenario].label}`,
       `Profile: ${profile}`,
+      `Search: ${result.search.mode === "warm" ? "Warm start" : "Fresh search"}; ${result.search.reusedPlans} plans reused; ${result.search.generations} generations`,
       `Budget cap: ₹${fmtL(result.budget.capexInr)} (same cap and resource limits for both policies)`,
       `Unspent: ₹${fmtL(result.budget.capexInr - chosen.capexInr)}`,
       `Capex: ₹${fmtL(chosen.capexInr)}  (baseline ₹${fmtL(result.baseline.capexInr)})`,
@@ -405,7 +414,7 @@ function PlanTab({ network, scenario, setScenario }) {
               <label>Scenario</label>
               <div className="seg wrap2">
                 {SCEN_KEYS.map(k => <button key={k} disabled={busy} aria-pressed={scenario === k}
-                  onClick={() => { setScenario(k); setResult(null); }}>{SCENARIOS[k].label}</button>)}
+                  onClick={() => { setScenario(k); setResult(null); setCopied(false); setRunError(null); previousRun.current = null; }}>{SCENARIOS[k].label}</button>)}
               </div>
             </div>
             <div className="field">
@@ -425,9 +434,14 @@ function PlanTab({ network, scenario, setScenario }) {
                 onChange={e => changeBudget("mobileUnits", +e.target.value)} />
             </div>
             <button className="btn" disabled={busy} onClick={run}>
-              {busy ? `Optimising… gen ${busyGen} / 60` : result ? "Re-optimise plans" : "Run optimiser"}</button>
-            {busy && <div style={{ marginTop: 10, height: 5, borderRadius: 4, background: 'rgba(255,255,255,0.07)', overflow: 'hidden' }}>
-              <div style={{ height: '100%', width: `${(busyGen / 60) * 100}%`, background: 'linear-gradient(90deg,var(--green),var(--green-br))', borderRadius: 4, transition: 'width 0.3s' }} /></div>}
+              {busy ? "Optimising…" : canWarmStart ? "Re-plan from previous plans" : result ? "Re-optimise plans" : "Run optimiser"}</button>
+            {canWarmStart && !busy && <div className="hint" style={{ marginTop: 10 }}>Previous plans will be adapted to these limits. A shorter search will explore alternatives.</div>}
+            {runError && <div role="alert" className="callout" style={{ marginTop: 10 }}>Could not optimise: {runError}. Try a fresh run.</div>}
+            {result && <div className="reason" role="status" data-testid="search-summary">
+              <b>{result.search.mode === "warm" ? "Warm start" : "Fresh search"}</b> · {(result.elapsedMs / 1000).toFixed(2)} s<br />
+              {result.search.reusedPlans} previous plans reused · {result.search.repairedPlans} adjusted to fit · {result.search.generations} generations.
+              <div className="hint">Change the budget or resource limits to re-plan. Re-running unchanged settings starts fresh. Plans are kept only while this tab stays open.</div>
+            </div>}
             {result && !busy && <div className="hint" style={{ marginTop: 10 }}>
               Pareto front of {result.pareto.length} plans. Point size = overload hours.</div>}
           </div>
@@ -828,7 +842,11 @@ function MethodTab() {
           optimiser, trading capex against overload hours and loss-of-life, and returns a Pareto front.
           Every action counts toward the rupee cap, alongside maximum upgrade and mobile-unit counts.
           The 80/90 rule uses the same cap and counts, prioritises highest loading, and skips unaffordable
-          upgrades or uses an affordable mobile unit. Actual spending can differ between policies.</li>
+          upgrades or uses an affordable mobile unit. Actual spending can differ between policies.
+          Budget changes reuse a sample of the previous Pareto plans, repair them to the new limits,
+          and run 20 generations instead of 60. Scenario changes and unchanged-setting reruns start fresh.
+          Warm starts are deterministic for the same inputs and archive; a shorter search does not
+          guarantee a better result than a fresh search.</li>
         <li><b>Growth forecast</b> fits p10 / median / p90 latent load growth from six synthetic historical
           seasonal readings per transformer, using prior peak, cooling share, EV count and neighbourhood-growth proxy.
           Plan uses p90 conservatively; the detail panel exposes the complete range. Coverage is measured on synthetic targets that share latent growth with the training history, not an independent test set.</li>

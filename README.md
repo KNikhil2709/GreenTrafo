@@ -48,7 +48,11 @@ and Babel load from a CDN).
    choose a plan from the Pareto front, and compare it with the
    80% / 90% threshold rule under the same cap. Every action counts toward the budget;
    actual spending and unspent amounts are shown for both policies. Changing the budget
-   clears the previous result. Plan uses a conservative p90 latent-load-growth forecast; tap
+   clears the displayed result but keeps candidate plans for **Re-plan from previous plans**.
+   This warm start adapts old plans to the new limits and runs 20 generations instead of 60;
+   the result shows actual search time and how many plans were reused or adjusted.
+   Scenario changes, leaving the Plan tab, and unchanged-setting reruns start fresh.
+   Plan uses a conservative p90 latent-load-growth forecast; tap
    any transformer on the map for its p10 / p50 / p90 forecast and full detail panel.
    Use the 📋 Copy button to export the plan summary to clipboard.
 3. **Protect** — pick an at-risk transformer, scrub the heatwave evening. The chart shows
@@ -85,6 +89,7 @@ Run the regression checks after rebuilding:
 node build.js
 node tests/regression.cjs
 node tests/plan-budget.cjs
+node tests/plan-warm-start.cjs
 ```
 
 The checks exercise the shipped engine across five seeds and all three scenarios,
@@ -96,6 +101,15 @@ affordability. `runPlan` requires `{capexInr, upgrades, mobileUnits}` as non-neg
 The evolutionary repair keeps affordable actions in feeder order; it ensures feasibility,
 not a globally optimal selection. Equal budget caps do not guarantee equal actual spending.
 
+Warm-start engine usage: `runPlan(network, scenario, newBudget, seed, 20, 40,
+{archive: previousResult.archive})`. Archives carry a version and identity for the ordered
+network, scenario and optimiser seed. Mismatches and invalid actions are rejected; all reused
+actions are cloned, budget-repaired and evaluated again. Up to half the population is sampled
+from the previous front, leaving fresh candidates for exploration. Archives live only in
+memory. Repeatability requires the same inputs **and archive**. A shorter warm search does
+not guarantee better quality than a fresh search or global optimality. Compute remains
+synchronous; the UI shows a busy state and measured completion time, not live progress.
+
 For the browser checks, start the server, open a separate Chrome profile with
 `google-chrome --user-data-dir=/tmp/greentrafo-budget-chrome --remote-debugging-port=9222`,
 and run `node tests/browser-budget.cjs` with `playwright-core` installed (or set
@@ -105,6 +119,9 @@ Also run `node tests/browser-full.cjs` with the same Playwright setup for the co
 website walkthrough: all transformer details/scenarios, Plan interactions, Protect replay,
 Method FAQs, validation, responsive layouts and both HTML entry points. Its screenshots
 are written to `/tmp/greentrafo-full-*.png`.
+Run `node tests/browser-warm-start.cjs` as well for budget/resource changes, zero-to-high
+recovery, scenario/tab reset, error recovery and warm-start export. Screenshots are written
+to `/tmp/greentrafo-warm-*.png`.
 
 `engine.js` and `optimize.js` use ES module syntax. On Node 18.20, direct imports require
 `--experimental-default-type=module`; the build and regression scripts need no flags.
