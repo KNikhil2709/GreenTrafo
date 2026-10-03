@@ -2,6 +2,43 @@
 
 All notable changes to the GreenTrafo prototype are documented here.
 
+## [v0.6.0] — 2026-10-04
+
+### Full-site review follow-up
+- Added `tests/browser-full.cjs` to exercise the whole website in visible Chrome,
+  including all 40 transformer details in every scenario, Plan profiles/Pareto/export,
+  Protect scenario/transformer/map selection and replay, all five FAQs, repeated
+  validation, all tabs at three viewport widths and the alternate HTML entry point.
+- Fixed a map legend overlay that prevented real clicks on lower transformer nodes.
+  The legend now sits below the feeder in both Plan and Protect.
+- Separated EV charge-chart title, plot, time labels and legend to fix overlapping text;
+  the cursor is hidden when replay time is outside the chart's evening window.
+- Recorded the user's required code-review/full-website-test gate before commit commands.
+
+### Added
+- Hard `capexInr` constraint for every Plan candidate and the 80/90 threshold baseline,
+  covering upgrade, mobile and rebalance costs alongside upgrade/mobile count limits.
+- INR budget slider (₹0–60L, default ₹24L), actual spend/unspent comparison, zero-budget
+  explanation, assumed action costs and budget details in copied summaries.
+- Public Plan input checks reject missing, negative, fractional and non-finite budgets.
+- Budget boundary tests and a repeatable visible-Chrome user-flow test.
+
+### Changed
+- Budget edits clear prior results; controls are disabled while optimisation runs.
+- Baseline skips unaffordable upgrades, considers an affordable mobile fallback, and
+  continues to later transformers. Both policies share the cap; actual spend may differ.
+- Clicking a Pareto point labels the copied profile as custom rather than a stale named profile.
+
+### Verified
+- Existing regression: five seeds, 15 deterministic Plan cases, 600 Protect cases and 5/5
+  smoke checks; shipped HTML entry points remain identical.
+- Budget tests: 24 boundary cases, rebalance-only caps, independently calculated costs,
+  baseline affordability/mobile fallback, invalid inputs and no network/budget mutation.
+- Visible Chrome: all three scenarios and profiles, zero/small budgets, result invalidation,
+  clipboard, Validate 5/5, Protect and mobile layout. No runtime exceptions.
+- At seed 42, Hot summer, ₹10L cap: Most reliable spends ₹10L versus baseline ₹9L.
+  This is a same-cap comparison, not evidence of equal-spend superiority or full TDD acceptance.
+
 ## [v0.5.0] — 2026-10-03
 
 ### Added

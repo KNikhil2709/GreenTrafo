@@ -123,9 +123,9 @@
     background: rgba(61,205,88,0.1); border: 1px solid var(--line-2); padding: 3px 10px; border-radius: 999px; }
   svg.feeder { display: block; width: 100%; height: auto;
     background: radial-gradient(900px 500px at 50% 0%, rgba(61,205,88,0.05), transparent 60%), #05150D; }
-  .maplegend { position: absolute; left: 14px; bottom: 14px; background: rgba(4,18,12,0.82);
+  .maplegend { margin: 0 14px 14px; background: rgba(4,18,12,0.82);
     border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; backdrop-filter: blur(6px);
-    font-size: 11px; color: var(--ink-2); display: grid; gap: 6px; }
+    font-size: 11px; color: var(--ink-2); display: flex; flex-wrap: wrap; gap: 6px 14px; }
   .maplegend .row { display: flex; align-items: center; gap: 7px; }
   .maplegend i { width: 11px; height: 11px; border-radius: 3px; display: inline-block; }
   .maptoggles { position: absolute; right: 14px; top: 56px; background: rgba(4,18,12,0.82);

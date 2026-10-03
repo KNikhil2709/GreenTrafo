@@ -44,9 +44,11 @@ and Babel load from a CDN).
 ## What you'll see
 
 1. A dark landing hero. Click **Start planning** (or scroll) to drop into the app.
-2. **Plan** — pick a scenario and budget, press **Run optimiser** (watch the live generation
-   counter + progress bar), choose a plan from the Pareto front, and compare it with the
-   80% / 90% threshold rule. Plan uses a conservative p90 latent-load-growth forecast; tap
+2. **Plan** — pick a scenario, rupee cap and maximum upgrade/mobile counts, press **Run optimiser**,
+   choose a plan from the Pareto front, and compare it with the
+   80% / 90% threshold rule under the same cap. Every action counts toward the budget;
+   actual spending and unspent amounts are shown for both policies. Changing the budget
+   clears the previous result. Plan uses a conservative p90 latent-load-growth forecast; tap
    any transformer on the map for its p10 / p50 / p90 forecast and full detail panel.
    Use the 📋 Copy button to export the plan summary to clipboard.
 3. **Protect** — pick an at-risk transformer, scrub the heatwave evening. The chart shows
@@ -82,11 +84,27 @@ Run the regression checks after rebuilding:
 ```bash
 node build.js
 node tests/regression.cjs
+node tests/plan-budget.cjs
 ```
 
 The checks exercise the shipped engine across five seeds and all three scenarios,
 including forecast bands, cache isolation, deterministic plans and Protect energy totals.
 They do not establish independent forecast accuracy or full TDD acceptance.
+
+The budget checks cover zero/small caps, all action costs, resource limits and baseline
+affordability. `runPlan` requires `{capexInr, upgrades, mobileUnits}` as non-negative integers.
+The evolutionary repair keeps affordable actions in feeder order; it ensures feasibility,
+not a globally optimal selection. Equal budget caps do not guarantee equal actual spending.
+
+For the browser checks, start the server, open a separate Chrome profile with
+`google-chrome --user-data-dir=/tmp/greentrafo-budget-chrome --remote-debugging-port=9222`,
+and run `node tests/browser-budget.cjs` with `playwright-core` installed (or set
+`PLAYWRIGHT_MODULE` to an existing installation). It leaves the tested demo open and writes
+desktop/mobile screenshots under `/tmp/greentrafo-budget-*.png`.
+Also run `node tests/browser-full.cjs` with the same Playwright setup for the complete
+website walkthrough: all transformer details/scenarios, Plan interactions, Protect replay,
+Method FAQs, validation, responsive layouts and both HTML entry points. Its screenshots
+are written to `/tmp/greentrafo-full-*.png`.
 
 `engine.js` and `optimize.js` use ES module syntax. On Node 18.20, direct imports require
 `--experimental-default-type=module`; the build and regression scripts need no flags.
