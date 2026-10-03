@@ -11,10 +11,11 @@ TDD is deliberately **not yet built** — that is expected for a hackathon proto
 
 ## Overall
 
-Roughly **48%** of the production TDD is realised. The simulation engine now exposes a
-quantile-style uncertainty band (p10/p90 load-growth) for every transformer, surfaced in
-the Plan detail panel. The remaining ~52% is production plumbing (real power flow, API,
-database, deployment, tests).
+Roughly **55%** of the production TDD is realised. The prototype now covers both Plan and
+Protect end-to-end with a full TDD §15 validation suite (5/5 experiments pass in-browser),
+a 3-curve Protect comparison (Unmanaged / ToU / Managed), and a p10/p90 load-growth
+uncertainty band. The remaining ~45% is production plumbing (real power flow, API,
+database, deployment).
 
 ## By TDD section
 
@@ -33,8 +34,8 @@ database, deployment, tests).
 | 11. Protect module | 🟡 | Valley-filling scheduler with departure-time + comfort constraints ✅. Dual-curve comparison chart + EV charge bar chart added. Not the full cvxpy convex programme. |
 | 12. Forecasting | ⬜ | Latent load-growth quantile regression not yet built; unsanctioned growth is a synthetic parameter. |
 | 13. API specification | ⬜ | No REST API; the engine runs in-browser. API is designed in the TDD. |
-| 14. Frontend design | ✅ | Three tabs + dark hero + green-outcomes panel (now with CO₂ metric). Transformer detail panel, FAQ accordion. Dark command-center theme. |
-| 15. Testing and validation | 🟡 | Engine sanity-checked (scenario gradient, Plan beats baseline, Protect stays under limit). No CI/unit-test suite yet. |
+| 14. Frontend design | ✅ | Three tabs + Validate tab + dark hero + green-outcomes panel (CO₂ metric). Transformer detail panel, FAQ accordion. |
+| 15. Testing and validation | ✅ | **5 TDD §15 experiments run in-browser and pass (5/5).** No CI yet. |
 | 16. Deployment, monitoring, security | 🟡 | Runs locally / as a static page. No Docker, monitoring, or auth (none needed for the demo). |
 | 17. Implementation plan and risks | ✅ | Documented; risks and honest limits shown in the app's Method tab + FAQ. |
 
@@ -46,9 +47,10 @@ database, deployment, tests).
 - ✅ **Plan**: transformer detail panel with **p10/p90 load-growth uncertainty band** on both loading and hot-spot charts
 - ✅ **Plan**: live NSGA-II generation counter + progress bar during optimisation
 - ✅ **Plan**: 📋 Copy plan summary to clipboard
-- ✅ **Protect**: evening replay with dual hot-spot curve (Managed vs Unmanaged on same chart)
-- ✅ **Protect**: EV charge schedule bar chart (kW per 15-min slot, 16:00–24:00 window)
+- ✅ **Protect**: evening replay with 3-curve hot-spot chart (Managed / ToU / Unmanaged on same chart)
+- ✅ **Protect**: EV charge schedule bar chart with 3 series (red = Unmanaged, amber = ToU, green = Managed)
 - ✅ **Protect**: robust scenario handling — never crashes even when no transformers are strictly at-risk (3-tier fallback)
+- ✅ **Validate tab** — 5 TDD §15 automation experiments, all passing (5/5 ✔)
 - ✅ Green-outcomes accounting: avoided replacements, diesel hours avoided, peak kWh shifted, **CO₂ avoided** (0.82 kgCO₂/kWh CEA 2024)
 - ✅ FAQ accordion in Method & limits tab (5 questions covering data, model, algorithms, product fit)
 - ✅ Dark command-center UI + cinematic hero, Schneider-green theme

@@ -2,6 +2,23 @@
 
 All notable changes to the GreenTrafo prototype are documented here.
 
+## [v0.4.0] — 2026-10-03
+
+### Added
+- **Validate tab (TDD §15):** 4th nav tab running 5 automated in-browser validation experiments:
+  - *Physics sanity* — IEEE C57.91 step-load convergence to exact rated temperature
+  - *Determinism* — bit-exact match across two calls with identical inputs
+  - *Plan beats 80/90 baseline* — thermal-informed (LoL-ranked) upgrade selection vs loading-threshold at equal budget
+  - *Protect on-time ≥ 95%* — scheduler on-time share across all 3 scenarios
+  - *Protect hot-spot bound* — managed time-over-110°C ≤ unmanaged in Hot summer and High EV growth
+  - All 5 experiments pass (5/5 ✔)
+- **ToU baseline in Protect (TDD §11):** third comparison curve added to the hot-spot chart
+  - Amber = Time-of-Use (charge EVs only during off-peak 22:00–06:00)
+  - EV bar chart updated to 3 series: Unmanaged (red) · ToU (amber) · Managed (green)
+  - `runProtect` now returns `tou` thermal result + `touKw` schedule alongside managed/unmanaged
+
+---
+
 ## [v0.3.1] — 2026-10-03
 
 ### Added
