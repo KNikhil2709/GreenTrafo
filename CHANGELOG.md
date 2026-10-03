@@ -2,6 +2,21 @@
 
 All notable changes to the GreenTrafo prototype are documented here.
 
+## [v0.3.1] — 2026-10-03
+
+### Added
+- **Load-growth uncertainty band (Plan tab):** The transformer detail panel now shows both
+  a loading chart and a hot-spot temperature chart, each with a shaded p10/p90 envelope.
+  - `simulateTransformerBand()` added to `engine.js`: runs the IEEE C57.91 thermal model
+    at 0.5× (p10 — conservative) and 1.7× (p90 — pessimistic) unsanctioned growth
+    multipliers to produce a quantile-style envelope.
+  - `LineChart` updated with an optional `band` prop: `{ low[], high[], color }`. Renders
+    a filled SVG polygon between p10 and p90 bounds, with dashed outline curves.
+  - A worst-case hint at the bottom of the detail card shows e.g.
+    "p90 peak: 105% loading · 97°C hot-spot (assumes +70% hidden load growth)".
+
+---
+
 ## [v0.3.0] — 2026-10-03
 
 ### Added

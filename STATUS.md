@@ -11,10 +11,10 @@ TDD is deliberately **not yet built** — that is expected for a hackathon proto
 
 ## Overall
 
-Roughly **45%** of the production TDD is realised. The UI and analytics layer are now
-substantially richer than the initial prototype: both Plan and Protect have comparison
-visualisations, a full transformer detail panel, and CO₂ accounting. The remaining ~55%
-is production plumbing (real power flow, API, database, deployment, tests).
+Roughly **48%** of the production TDD is realised. The simulation engine now exposes a
+quantile-style uncertainty band (p10/p90 load-growth) for every transformer, surfaced in
+the Plan detail panel. The remaining ~52% is production plumbing (real power flow, API,
+database, deployment, tests).
 
 ## By TDD section
 
@@ -43,7 +43,7 @@ is production plumbing (real power flow, API, database, deployment, tests).
 - ✅ Seeded synthetic feeder (~40 transformers), three scenarios with a realistic risk gradient
 - ✅ IEEE C57.91 top-oil / hot-spot thermal model → ageing factor → loss-of-life
 - ✅ **Plan**: NSGA-II optimiser, Pareto front, Lowest-cost / Balanced / Most-reliable profiles, deltas vs the 80/90 baseline
-- ✅ **Plan**: transformer detail panel (tap any node → full-day loading curve, hot-spot, loss-of-life, overload hours)
+- ✅ **Plan**: transformer detail panel with **p10/p90 load-growth uncertainty band** on both loading and hot-spot charts
 - ✅ **Plan**: live NSGA-II generation counter + progress bar during optimisation
 - ✅ **Plan**: 📋 Copy plan summary to clipboard
 - ✅ **Protect**: evening replay with dual hot-spot curve (Managed vs Unmanaged on same chart)
