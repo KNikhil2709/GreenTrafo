@@ -184,7 +184,7 @@ function Convergence({ history }) {
 
 // ---------- EV charge schedule bar chart ----------
 function ChargeBar({ unmanagedKw, managedKw, touKw, step }) {
-  const W = 356, H = 100, pad = 28;
+  const W = 356, H = 138, pad = 28, plotTop = 18;
   const n = unmanagedKw.length;
   // only show evening window 16:00–24:00 (steps 64–96)
   const startS = 64, endS = 96, span = endS - startS;
@@ -193,15 +193,15 @@ function ChargeBar({ unmanagedKw, managedKw, touKw, step }) {
   const slotW = (W - pad) / span;
   const barW = slotW * 0.28;
   const X = i => pad + (i / span) * (W - pad);
-  const H2 = H - pad;
+  const H2 = 72, baselineY = plotTop + H2;
   return (
     <svg viewBox={`0 0 ${W} ${H}`} style={{ width: "100%", height: "auto" }} role="img" aria-label="EV charge schedule">
       <text x={pad} y={10} fontSize="9" fill="var(--ink-3)">EV charging kW (16:00–24:00)</text>
-      <line x1={pad} y1={H - pad} x2={W} y2={H - pad} stroke="rgba(255,255,255,0.1)" />
+      <line x1={pad} y1={baselineY} x2={W} y2={baselineY} stroke="rgba(255,255,255,0.1)" />
       {[16, 18, 20, 22, 24].map(h => {
         const s = (h * 4) - startS;
         if (s < 0 || s > span) return null;
-        return <text key={h} x={X(s)} y={H - pad + 11} textAnchor="middle" fontSize="8.5" fill="var(--ink-3)">{h}:00</text>;
+        return <text key={h} x={X(s)} y={baselineY + 11} textAnchor={h === 24 ? "end" : "middle"} fontSize="8.5" fill="var(--ink-3)">{h}:00</text>;
       })}
       {Array.from({ length: span }, (_, i) => {
         const si = startS + i;
@@ -212,16 +212,16 @@ function ChargeBar({ unmanagedKw, managedKw, touKw, step }) {
         const xBase = X(i) - barW * 1.5;
         return (
           <g key={i}>
-            <rect x={xBase} y={H2 - (um / maxV) * H2 + pad / 2 - pad / 2} width={barW}
+            <rect x={xBase} y={baselineY - (um / maxV) * H2} width={barW}
               height={(um / maxV) * H2} fill="rgba(226,76,76,0.5)" rx="1" opacity={isNow ? 1 : 0.7} />
-            <rect x={xBase + barW + 1} y={H2 - (to / maxV) * H2 + pad / 2 - pad / 2} width={barW}
+            <rect x={xBase + barW + 1} y={baselineY - (to / maxV) * H2} width={barW}
               height={(to / maxV) * H2} fill="rgba(242,193,46,0.6)" rx="1" opacity={isNow ? 1 : 0.7} />
-            <rect x={xBase + barW * 2 + 2} y={H2 - (mg / maxV) * H2 + pad / 2 - pad / 2} width={barW}
+            <rect x={xBase + barW * 2 + 2} y={baselineY - (mg / maxV) * H2} width={barW}
               height={(mg / maxV) * H2} fill="rgba(95,224,122,0.6)" rx="1" opacity={isNow ? 1 : 0.7} />
           </g>
         );
       })}
-      <rect x={X((step - startS) - 0.5)} y={pad / 2 - pad / 2} width={2} height={H2} fill="rgba(255,255,255,0.4)" rx="1" />
+      {step >= startS && step < endS && <rect x={X((step - startS) - 0.5)} y={plotTop} width={2} height={H2} fill="rgba(255,255,255,0.4)" rx="1" />}
       <circle cx={24} cy={H - 16} r={4} fill="rgba(226,76,76,0.7)" />
       <text x={32} y={H - 12} fontSize="8.5" fill="var(--ink-3)">Unmanaged</text>
       <circle cx={100} cy={H - 16} r={4} fill="rgba(242,193,46,0.8)" />
@@ -310,7 +310,7 @@ function TransformerDetail({ transformerId, network, scenario, perT, forecast })
 
 // ---------- Plan tab ----------
 function PlanTab({ network, scenario, setScenario }) {
-  const [budget, setBudget] = useState({ upgrades: 8, mobileUnits: 3 });
+  const [budget, setBudget] = useState({ capexInr: 2400000, upgrades: 8, mobileUnits: 3 });
   const [result, setResult] = useState(null);
   const [profile, setProfile] = useState("balanced");
   const [selIdx, setSelIdx] = useState(null);
@@ -324,6 +324,11 @@ function PlanTab({ network, scenario, setScenario }) {
   // the entire fitted uncertainty range so the conservative choice is explicit.
   const planningNetwork = useMemo(() => networkAtForecastQuantile(network, forecast, "p90"), [network, forecast]);
   const preview = useMemo(() => evaluatePlan(planningNetwork, scenario, {}), [planningNetwork, scenario]);
+
+  function changeBudget(key, value) {
+    setBudget(current => ({ ...current, [key]: value }));
+    setResult(null); setSelIdx(null); setCopied(false);
+  }
 
   function run() {
     setBusy(true); setBusyGen(0);
@@ -349,8 +354,11 @@ function PlanTab({ network, scenario, setScenario }) {
     if (!chosen || !green) return;
     const text = [
       `GreenTrafo — Plan summary`,
+      `Simulated data; assumed action costs`,
       `Scenario: ${SCENARIOS[scenario].label}`,
       `Profile: ${profile}`,
+      `Budget cap: ₹${fmtL(result.budget.capexInr)} (same cap and resource limits for both policies)`,
+      `Unspent: ₹${fmtL(result.budget.capexInr - chosen.capexInr)}`,
       `Capex: ₹${fmtL(chosen.capexInr)}  (baseline ₹${fmtL(result.baseline.capexInr)})`,
       `Loss of life: ${chosen.lossOfLifeHours.toFixed(1)} h  (baseline ${result.baseline.lossOfLifeHours.toFixed(1)} h)`,
       `Overload hours: ${chosen.overloadHours.toFixed(0)} h  (baseline ${result.baseline.overloadHours.toFixed(0)} h)`,
@@ -392,23 +400,29 @@ function PlanTab({ network, scenario, setScenario }) {
         <div className="railL">
           <div className="card">
             <h2>Plan before summer</h2>
-            <div className="sub">Spend a limited upgrade budget.</div>
+            <div className="sub">Choose actions within a fixed rupee budget.</div>
             <div className="field">
               <label>Scenario</label>
               <div className="seg wrap2">
-                {SCEN_KEYS.map(k => <button key={k} aria-pressed={scenario === k}
+                {SCEN_KEYS.map(k => <button key={k} disabled={busy} aria-pressed={scenario === k}
                   onClick={() => { setScenario(k); setResult(null); }}>{SCENARIOS[k].label}</button>)}
               </div>
             </div>
             <div className="field">
-              <label>Upgrades <span className="v">{budget.upgrades}</span></label>
-              <input type="range" min="0" max="16" value={budget.upgrades}
-                onChange={e => setBudget({ ...budget, upgrades: +e.target.value })} />
+              <label htmlFor="capex-budget">Capex budget <span className="v">₹{fmtL(budget.capexInr)}</span></label>
+              <input id="capex-budget" type="range" min="0" max="6000000" step="100000" disabled={busy} value={budget.capexInr}
+                onChange={e => changeBudget("capexInr", +e.target.value)} />
+              <div className="hint">All actions count: upgrades ₹1.8–3L, rebalance ₹0.4L, mobile ₹1.2L. Assumed costs.</div>
             </div>
             <div className="field">
-              <label>Mobile units <span className="v">{budget.mobileUnits}</span></label>
-              <input type="range" min="0" max="8" value={budget.mobileUnits}
-                onChange={e => setBudget({ ...budget, mobileUnits: +e.target.value })} />
+              <label htmlFor="upgrade-limit">Maximum upgrades <span className="v">{budget.upgrades}</span></label>
+              <input id="upgrade-limit" type="range" min="0" max="16" disabled={busy} value={budget.upgrades}
+                onChange={e => changeBudget("upgrades", +e.target.value)} />
+            </div>
+            <div className="field">
+              <label htmlFor="mobile-limit">Maximum mobile units <span className="v">{budget.mobileUnits}</span></label>
+              <input id="mobile-limit" type="range" min="0" max="8" disabled={busy} value={budget.mobileUnits}
+                onChange={e => changeBudget("mobileUnits", +e.target.value)} />
             </div>
             <button className="btn" disabled={busy} onClick={run}>
               {busy ? `Optimising… gen ${busyGen} / 60` : result ? "Re-optimise plans" : "Run optimiser"}</button>
@@ -467,7 +481,7 @@ function PlanTab({ network, scenario, setScenario }) {
                 </div>
               </div>
               <div className="sub">NSGA-II · {result.pareto.length} plans · deltas vs the 80/90 baseline.</div>
-              <ParetoChart pareto={result.pareto} selIdx={selIdx} onPick={setSelIdx} baseline={result.baseline} />
+              <ParetoChart pareto={result.pareto} selIdx={selIdx} onPick={i => { setSelIdx(i); setProfile("custom"); }} baseline={result.baseline} />
             </div>
             {[["lowestCost", "Lowest cost"], ["balanced", "Balanced"], ["mostReliable", "Most reliable"]].map(([k, l]) => {
               const p = result.profiles[k]; const b = result.baseline;
@@ -488,7 +502,12 @@ function PlanTab({ network, scenario, setScenario }) {
             })}
             <div className="card" style={{ marginTop: 2 }}>
               <h2>This plan vs the 80% / 90% rule</h2>
-              <div className="sub">Compared at each policy's own cost.</div>
+              <div className="sub">Same ₹{fmtL(result.budget.capexInr)} cap and resource limits. Actual spend may differ; this is not an equal-spend comparison.</div>
+              <div className="reason" data-testid="budget-summary" style={{ marginBottom: 12 }}>
+                <b>Selected plan: ₹{fmtL(chosen.capexInr)} spent</b> · ₹{fmtL(result.budget.capexInr - chosen.capexInr)} unspent.<br />
+                80/90 rule: ₹{fmtL(result.baseline.capexInr)} spent · ₹{fmtL(result.budget.capexInr - result.baseline.capexInr)} unspent.
+                {budget.capexInr === 0 && <div>Zero budget: both policies take no action.</div>}
+              </div>
               <CompareBars plan={chosen} base={result.baseline} />
             </div>
           </>}
@@ -806,7 +825,10 @@ function MethodTab() {
         <li><b>Thermal model</b> is a discrete form of the IEEE C57.91 top-oil and hot-spot equations, giving an
           ageing acceleration factor and loss-of-life per transformer.</li>
         <li><b>Plan</b> searches action plans (upgrade, rebalance, mobile unit) with a multi-objective evolutionary
-          optimiser, trading capex against overload hours and loss-of-life, and returns a Pareto front.</li>
+          optimiser, trading capex against overload hours and loss-of-life, and returns a Pareto front.
+          Every action counts toward the rupee cap, alongside maximum upgrade and mobile-unit counts.
+          The 80/90 rule uses the same cap and counts, prioritises highest loading, and skips unaffordable
+          upgrades or uses an affordable mobile unit. Actual spending can differ between policies.</li>
         <li><b>Growth forecast</b> fits p10 / median / p90 latent load growth from six synthetic historical
           seasonal readings per transformer, using prior peak, cooling share, EV count and neighbourhood-growth proxy.
           Plan uses p90 conservatively; the detail panel exposes the complete range. Coverage is measured on synthetic targets that share latent growth with the training history, not an independent test set.</li>

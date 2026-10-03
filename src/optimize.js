@@ -84,14 +84,29 @@ function frontQuality(fronts, objs) {
   return Math.max(0, hv);
 }
 
-// budgeted repair: keep cheapest-effective actions within budget
+// Validate once at the public entry point: money is integer INR, counts are limits.
+function validatePlanBudget(budget) {
+  for (const key of ["capexInr", "upgrades", "mobileUnits"]) {
+    if (!Number.isSafeInteger(budget?.[key]) || budget[key] < 0)
+      throw new RangeError(`Plan budget ${key} must be a non-negative safe integer`);
+  }
+}
+
+// Deterministic feasibility repair. Keep actions in feeder order when they fit;
+// skip unaffordable actions so cheaper later actions can still use the remainder.
 function repair(network, actions, budget) {
-  let upgrades = 0, mobiles = 0;
-  // count and trim
+  let upgrades = 0, mobiles = 0, spent = 0;
   for (const t of network.transformers) {
     const a = actions[t.id];
-    if (a === "upgrade") { if (upgrades >= budget.upgrades) actions[t.id] = "none"; else upgrades++; }
-    else if (a === "mobile") { if (mobiles >= budget.mobileUnits) actions[t.id] = "none"; else mobiles++; }
+    const cost = actionCost(t, a);
+    if ((a === "upgrade" && upgrades >= budget.upgrades) ||
+        (a === "mobile" && mobiles >= budget.mobileUnits) || spent + cost > budget.capexInr) {
+      actions[t.id] = "none";
+      continue;
+    }
+    spent += cost;
+    if (a === "upgrade") upgrades++;
+    if (a === "mobile") mobiles++;
   }
   return actions;
 }
@@ -112,15 +127,20 @@ function thresholdPlan(network, scenario, budget) {
     return { id: t.id, t, peak: sim.peakLoading };
   }).sort((x, y) => y.peak - x.peak);
   const a = {}; network.transformers.forEach(t => a[t.id] = "none");
-  let up = 0, mob = 0;
+  let up = 0, mob = 0, spent = 0;
   for (const s of scored) {
-    if (s.peak >= 0.9 && up < budget.upgrades) { a[s.id] = "upgrade"; up++; }
-    else if (s.peak >= 0.8 && mob < budget.mobileUnits) { a[s.id] = "mobile"; mob++; }
+    if (s.peak >= 0.9 && up < budget.upgrades && spent + actionCost(s.t, "upgrade") <= budget.capexInr) {
+      a[s.id] = "upgrade"; up++;
+    } else if (s.peak >= 0.8 && mob < budget.mobileUnits && spent + actionCost(s.t, "mobile") <= budget.capexInr) {
+      a[s.id] = "mobile"; mob++;
+    }
+    spent += actionCost(s.t, a[s.id]);
   }
   return a;
 }
 
 export function runPlan(network, scenario, budget, seed = 42, gens = 60, pop = 40) {
+  validatePlanBudget(budget);
   const r = rng(seed * 2246822519);
   let population = Array.from({ length: pop }, () => randomPlan(network, budget, r));
   // seed in the threshold plan too
@@ -196,7 +216,7 @@ export function runPlan(network, scenario, budget, seed = 42, gens = 60, pop = 4
     overloadHours: baseEval.overloadHours, lossOfLifeHours: baseEval.lossOfLifeHours, perT: baseEval.perT
   };
 
-  return { pareto, profiles: { lowestCost, mostReliable, balanced }, baseline, history };
+  return { pareto, profiles: { lowestCost, mostReliable, balanced }, baseline, history, budget: { ...budget } };
 }
 
 // ---- Protect: schedule flexible EV + AC on one transformer for the evening ----
