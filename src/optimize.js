@@ -260,127 +260,84 @@ export function runPlan(network, scenario, budget, seed = 42, gens = 60, pop = 4
   };
 }
 
-// ---- Protect: schedule flexible EV + AC on one transformer for the evening ----
-// Greedy valley-filling MPC proxy: fill charging into the lowest-temperature feasible slots
-// while meeting energy-by-departure, then report trajectory.
-export function runProtect(network, scenario, transformerId, seed = 42) {
+// ---- Protect: chronological 00:00 today–12:00 tomorrow, 15-minute averages ----
+// Generated sessions use next-morning departure hours; test/caller overrides use
+// absolute hours (e.g. arrive 17.1, depart 30.2). No charging is wrapped to today.
+export function runProtect(network, scenario, transformerId, seed = 42, options = {}) {
   const t = network.transformers.find(x => x.id === transformerId);
-  const sc = SCENARIOS[scenario];
-  const amb = Array.from({ length: DAY_STEPS }, (_, s) => {
-    const h = s * STEP_H, base = sc.ambientPeak - 10;
-    return base + (sc.ambientPeak - base) * Math.max(0, Math.sin((h - 5) / 24 * 2 * Math.PI * 0.75));
-  });
-  // base (non-EV) load pu for this transformer
-  const baseSim = simulateTransformer({ ...t, evCount: 0 }, scenario);
-  const basePU = baseSim.loadingPU.slice();
-  const sessions = evSessions(t, scenario, seed);
-  const kWbase = t.rating; // 1 pu = rating kVA ~ kW for unity pf approximation
-
-  // helper: loading pu after adding charging kW array
-  function puWith(chargeKw, acShift = 0) {
-    return basePU.map((p, s) => p * (1 - acShift) + (chargeKw[s] || 0) / kWbase);
+  if (!t || !Object.hasOwn(SCENARIOS, scenario)) throw new RangeError("Unknown Protect transformer or scenario");
+  const steps = 144, horizonHours = steps * STEP_H;
+  const sessions = options.sessions ?? evSessions(t, scenario, seed).map(s => ({ ...s, depart: s.depart + 24 }));
+  if (!Array.isArray(sessions)) throw new RangeError("Invalid Protect sessions: expected an array");
+  const ids = new Set();
+  for (const s of sessions) {
+    if (!s || typeof s.id !== "string" || ids.has(s.id) ||
+        ![s.arrive, s.depart, s.energy, s.maxKw].every(Number.isFinite) ||
+        s.arrive < 0 || s.depart > horizonHours || s.depart <= s.arrive || s.energy < 0 || s.maxKw <= 0)
+      throw new RangeError("Invalid Protect session: use unique IDs, absolute hours inside 0–36 and non-negative energy");
+    ids.add(s.id);
   }
-
-  // UNMANAGED: charge full power from arrival
-  const unmanagedKw = new Array(DAY_STEPS).fill(0);
-  for (const sess of sessions) {
-    let need = sess.energy; let s = Math.round(sess.arrive / STEP_H);
-    while (need > 0 && s < DAY_STEPS + Math.round(sess.depart / STEP_H)) {
-      const idx = s % DAY_STEPS;
-      const e = Math.min(sess.maxKw * STEP_H, need);
-      unmanagedKw[idx] += e / STEP_H; need -= e; s++;
-    }
-  }
-  const unmanaged = thermal(puWith(unmanagedKw), amb);
-  const baseOnly = thermal(basePU, amb);
-  const baseOverLimit = baseOnly.hotSpot.filter(h => h > HOT_SPOT_LIMIT).length * STEP_H;
-
-  // MANAGED: valley-fill — allocate each session's energy to its feasible window,
-  // preferring the coolest feasible slots and keeping loading under a soft cap that
-  // corresponds to staying below the hot-spot limit.
-  const managedKw = new Array(DAY_STEPS).fill(0);
-  // small AC setpoint shift during the hottest evening hours (applied first)
-  const acShiftSeries = basePU.map((_, s) => { const h = s * STEP_H; return (h >= 18 && h <= 22) ? 0.07 : 0; });
-  const shiftedBasePU = basePU.map((p, s) => p * (1 - acShiftSeries[s]));
-  // loading cap that keeps hot-spot comfortably under the limit (per-unit)
-  const CAP = 0.9;
-  const loadNow = (s) => shiftedBasePU[s] + (managedKw[s] || 0) / kWbase;
-  let onTime = 0;
-  // sort sessions by tightness (least slack first) so hard cases get cool slots first
-  const ordered = [...sessions].sort((a, b) => (a.depart - a.arrive) - (b.depart - b.arrive));
-  for (const sess of ordered) {
-    const startIdx = Math.round(sess.arrive / STEP_H);
-    const endIdx = Math.round((24 + sess.depart) / STEP_H);
-    const slots = [];
-    for (let s = startIdx; s < endIdx; s++) slots.push(s % DAY_STEPS);
-    let need = sess.energy;
-    // pass 1: coolest slots with headroom under CAP
-    const byTemp = [...slots].sort((a, b) => (amb[a] + shiftedBasePU[a] * 30) - (amb[b] + shiftedBasePU[b] * 30));
-    for (const idx of byTemp) {
-      if (need <= 0) break;
-      const headroom = Math.max(0, (CAP - loadNow(idx)) * kWbase);
-      const give = Math.min(sess.maxKw, headroom) * STEP_H;
-      if (give <= 0) continue;
-      const e = Math.min(give, need);
-      managedKw[idx] += e / STEP_H; need -= e;
-    }
-    // pass 2: if still unmet, raise the cap gradually but keep it below overload
-    for (const cap of [1.0, 1.1]) {
-      if (need <= 0.01) break;
-      for (const idx of byTemp) {
-        if (need <= 0) break;
-        const headroom = Math.max(0, (cap - loadNow(idx)) * kWbase);
-        const give = Math.min(sess.maxKw, headroom) * STEP_H;
-        if (give <= 0) continue;
-        const e = Math.min(give, need);
-        managedKw[idx] += e / STEP_H; need -= e;
+  const day = simulateTransformer(t, scenario);
+  // Repeat the assumed weather/base-demand day, but preserve chronological oil state.
+  const amb = Array.from({ length: steps }, (_, i) => day.ambient[i % DAY_STEPS]);
+  const basePU = Array.from({ length: steps }, (_, i) => day.loadingPU[i % DAY_STEPS]);
+  const shiftedBasePU = basePU.map((p, i) => p * (i * STEP_H >= 18 && i * STEP_H < 22 ? 0.93 : 1));
+  const overlap = (s, i, lo = 0, hi = horizonHours) => Math.max(0,
+    Math.min((i + 1) * STEP_H, s.depart, hi) - Math.max(i * STEP_H, s.arrive, lo));
+  const totals = { unmanaged: new Array(steps).fill(0), managed: new Array(steps).fill(0), tou: new Array(steps).fill(0) };
+  const reports = new Map(sessions.map(s => [s.id, { ...s }]));
+  for (const mode of ["unmanaged", "tou", "managed"]) {
+    // Earliest/tightest windows get managed headroom first. Stable deterministic ties.
+    const ordered = mode === "managed" ? [...sessions].sort((a, b) =>
+      (a.depart - a.arrive - a.energy / a.maxKw) - (b.depart - b.arrive - b.energy / b.maxKw)) : sessions;
+    for (const s of ordered) {
+      const kw = new Array(steps).fill(0);
+      const capacity = Array.from({ length: steps }, (_, i) => s.maxKw *
+        (mode === "tou" ? overlap(s, i, 22, 30) : overlap(s, i)) / STEP_H);
+      const slots = capacity.map((v, i) => i).filter(i => capacity[i] > 0);
+      if (mode === "managed") slots.sort((a, b) =>
+        (amb[a] + shiftedBasePU[a] * 30) - (amb[b] + shiftedBasePU[b] * 30) || a - b);
+      let need = s.energy;
+      for (const cap of mode === "managed" ? [0.9, 1.0, 1.1] : [Infinity]) {
+        for (const i of slots) {
+          if (need <= 1e-9) break;
+          const headroom = mode === "managed" ? Math.max(0, (cap - shiftedBasePU[i]) * t.rating - totals[mode][i]) : Infinity;
+          // Remaining capacity prevents a second cap pass from exceeding this
+          // session's charger rating, including partial arrival/departure slots.
+          const give = Math.min(capacity[i] - kw[i], headroom, need / STEP_H);
+          if (give <= 0) continue;
+          kw[i] += give; totals[mode][i] += give; need -= give * STEP_H;
+        }
       }
-    }
-    if (need <= 0.02) onTime++;
-  }
-  const managedPU = shiftedBasePU.map((p, s) => p + (managedKw[s] || 0) / kWbase);
-  const managed = thermal(managedPU, amb);
-
-  // TIME-OF-USE baseline: restrict charging to off-peak window (22:00–06:00 next day)
-  const touKw = new Array(DAY_STEPS).fill(0);
-  for (const sess of sessions) {
-    let need = sess.energy;
-    // off-peak slots: 22:00 onward (idx 88+) wrapping to 00:00–06:00 (idx 0–23)
-    const offPeakSlots = [];
-    for (let s = 0; s < DAY_STEPS; s++) {
-      const h = s * STEP_H;
-      if (h >= 22 || h < 6) offPeakSlots.push(s);
-    }
-    // only use slots within the session's feasible window
-    const startIdx = Math.round(sess.arrive / STEP_H);
-    const endIdx = Math.round((24 + sess.depart) / STEP_H);
-    const feasible = new Set();
-    for (let s = startIdx; s < endIdx; s++) feasible.add(s % DAY_STEPS);
-    const slots = offPeakSlots.filter(s => feasible.has(s));
-    // fallback: if no off-peak slots in window, use any feasible slot
-    const useSlots = slots.length ? slots : [...feasible];
-    for (const idx of useSlots) {
-      if (need <= 0) break;
-      const e = Math.min(sess.maxKw * STEP_H, need);
-      touKw[idx] += e / STEP_H; need -= e;
+      const deliveredKwh = kw.reduce((sum, p) => sum + p * STEP_H, 0);
+      reports.get(s.id)[mode] = { kw, deliveredKwh, unmetKwh: Math.max(0, s.energy - deliveredKwh), onTime: need <= 1e-6 };
     }
   }
-  const touPU = basePU.map((p, s) => p + (touKw[s] || 0) / kWbase);
-  const tou = thermal(touPU, amb);
-
-  const peakWindow = (s) => { const h = s * STEP_H; return h >= 18 && h <= 22; };
-  let shiftedKwh = 0;
-  for (let s = 0; s < DAY_STEPS; s++)
-    if (peakWindow(s)) shiftedKwh += Math.max(0, unmanagedKw[s] - managedKw[s]) * STEP_H;
-
+  const sessionReports = [...reports.values()];
+  const energy = {};
+  for (const mode of Object.keys(totals)) energy[mode] = {
+    requestedKwh: sessions.reduce((sum, s) => sum + s.energy, 0),
+    deliveredKwh: sessionReports.reduce((sum, s) => sum + s[mode].deliveredKwh, 0),
+    unmetKwh: sessionReports.reduce((sum, s) => sum + s[mode].unmetKwh, 0),
+    onTimeShare: sessions.length ? sessionReports.filter(s => s[mode].onTime).length / sessions.length : 1,
+  };
+  const unmanaged = thermal(basePU.map((p, i) => p + totals.unmanaged[i] / t.rating), amb);
+  const managed = thermal(shiftedBasePU.map((p, i) => p + totals.managed[i] / t.rating), amb);
+  const tou = thermal(basePU.map((p, i) => p + totals.tou[i] / t.rating), amb);
+  const over = result => result.hotSpot.filter(h => h > HOT_SPOT_LIMIT).length * STEP_H;
+  const baseOverLimit = over(thermal(basePU, amb));
+  let peakReduction = 0;
+  for (let i = 72; i < 88; i++) peakReduction += (totals.unmanaged[i] - totals.managed[i]) * STEP_H;
+  // Do not call unserved energy "shifted". Only matched delivered EV energy counts.
+  const shortfallDifference = Math.max(0, energy.unmanaged.deliveredKwh - energy.managed.deliveredKwh);
   return {
-    transformerId, sessions: sessions.length, onTimeShare: sessions.length ? onTime / sessions.length : 1,
-    ambient: amb, unmanaged, managed, tou, unmanagedKw, managedKw, touKw, baseOverLimit,
+    transformerId, sessions: sessions.length, sessionReports, energy, horizonHours,
+    onTimeShare: energy.managed.onTimeShare,
+    ambient: amb, unmanaged, managed, tou,
+    unmanagedKw: totals.unmanaged, managedKw: totals.managed, touKw: totals.tou, baseOverLimit,
     lolSaved: Math.max(0, unmanaged.lolHours - managed.lolHours),
-    peakKwhShifted: shiftedKwh,
-    overLimitUnmanaged: unmanaged.hotSpot.filter(h => h > HOT_SPOT_LIMIT).length * STEP_H,
-    overLimitManaged: managed.hotSpot.filter(h => h > HOT_SPOT_LIMIT).length * STEP_H,
-    overLimitToU: tou.hotSpot.filter(h => h > HOT_SPOT_LIMIT).length * STEP_H,
+    peakKwhShifted: Math.max(0, peakReduction - shortfallDifference),
+    overLimitUnmanaged: over(unmanaged), overLimitManaged: over(managed), overLimitToU: over(tou),
   };
 }
 

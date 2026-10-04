@@ -78,7 +78,7 @@ const {chromium} = require(process.env.PLAYWRIGHT_MODULE || 'playwright-core');
         await slider.focus(); await slider.press('Home');
         assert.equal(await page.locator('.clock').innerText(), '00:00');
         await slider.press('End');
-        assert.equal(await page.locator('.clock').innerText(), '23:45');
+        assert.equal(await page.locator('.clock').innerText(), '+1d 11:45');
         await healthy(); protectSelections++;
       }
       // At-risk map selection, including entries not shown in the four buttons.
@@ -106,7 +106,7 @@ const {chromium} = require(process.env.PLAYWRIGHT_MODULE || 'playwright-core');
       await slider.focus(); await slider.press('End');
       await page.locator('.playbtn').click();
       await page.waitForFunction(() => document.querySelector('.playbtn').textContent === '▶');
-      assert.equal(await slider.inputValue(), '95');
+      assert.equal(await slider.inputValue(), '143');
       console.log(`PASS Protect ${scenario}: selectors, map, both modes, slider endpoints, play/pause/end`);
     }
     await tab('Validate');

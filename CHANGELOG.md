@@ -2,6 +2,35 @@
 
 All notable changes to the GreenTrafo prototype are documented here.
 
+## [v0.9.0] — 2026-10-04
+
+### Fixed
+- Protect no longer rounds EV connection windows or double-allocates charger capacity
+  across scheduling passes. Partial slots use exact overlap; all allocations respect
+  requested energy and per-session power limits.
+- Charging after midnight stays after the evening in a continuous 36-hour thermal run.
+  ToU slots run chronologically and strictly within 22:00–06:00 tomorrow.
+- Infeasible requests remain unmet; unserved energy is excluded from shifted-energy totals.
+
+### Added
+- Per-session allocations and per-policy delivery/shortfall/on-time metrics.
+- Overnight replay and charts through tomorrow noon, a charging-delivery panel, expandable
+  EV details and a visible warning for unmet managed demand.
+- `tests/protect-overnight.cjs` for 360 schedules plus boundary/adversarial cases;
+  `tests/browser-overnight.cjs` for real UI flows and deliberately infeasible demand.
+
+### Limits
+- Next-day fixed demand/weather repeat the assumed day. Power values are slot averages;
+  thermal control remains a soft-cap greedy approximation, not convex MPC.
+- Protect totals now cover 36 hours; historical 24-hour headline numbers are not comparable.
+
+### Verified
+- Engine regression, budget, warm-start, handoff and overnight constraint suites passed.
+- Visible Chrome overnight checks passed, including impossible demand and midnight replay;
+  desktop/mobile screenshots inspected. Existing browser suites and full-site walkthrough
+  passed all scenarios, 120 transformer details, controls, validation, three viewport widths
+  and both HTML entries, with no runtime/console errors or failed requests.
+
 ## [v0.8.0] — 2026-10-04
 
 ### Added

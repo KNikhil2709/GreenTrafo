@@ -57,9 +57,12 @@ and Babel load from a CDN).
    Use the 📋 Copy button to export the plan summary to clipboard.
    Click **Use this plan in Protect** to carry the selected profile (or Pareto point),
    actions, scenario and p90 demand into the evening simulation.
-3. **Protect** — pick an at-risk transformer, scrub the heatwave evening. The chart shows
+3. **Protect** — pick an at-risk transformer, replay through midnight to the next morning. The chart shows
    both **Managed** and **Unmanaged** hot-spot curves simultaneously, plus an EV charge
-   schedule bar chart showing how load is shifted across the evening.
+   schedule bar chart showing how charging moves from evening to the following morning.
+   The 36-hour simulation keeps thermal state across midnight; `+1d` labels tomorrow.
+   **Charging delivery** reports delivered/unmet kWh and on-time share for each policy;
+   expand **Inspect EV sessions** for individual managed-delivery details.
    With a transferred plan, switch **Selected plan / Without plan** to compare actions
    using the same p90 demand and EV sessions. Inspect any transformer to see its action
    and resulting capacity. All three charging curves use the selected network.
@@ -98,11 +101,26 @@ node tests/regression.cjs
 node tests/plan-budget.cjs
 node tests/plan-warm-start.cjs
 node tests/plan-protect.cjs
+node tests/protect-overnight.cjs
 ```
 
 The checks exercise the shipped engine across five seeds and all three scenarios,
 including forecast bands, cache isolation, deterministic plans and Protect energy totals.
 They do not establish independent forecast accuracy or full TDD acceptance.
+
+Protect now returns 144 chronological 15-minute slots (00:00 today through 12:00 tomorrow),
+plus `sessionReports` and per-policy `energy` totals. Slot power is an average bounded by
+each session's exact overlap with the slot; repeated allocation passes share its remaining
+capacity. The strict ToU window is 22:00–06:00 tomorrow. Unmet demand is reported, never
+silently charged outside a window or counted as shifted energy. Tomorrow repeats today's
+assumed base demand/weather. This greedy scheduler still lacks a hard thermal constraint,
+departure uncertainty and a proof of feasibility. Historical 24-hour Protect totals should
+not be compared directly with the new 36-hour totals.
+
+For custom engine fixtures, `runProtect(network, scenario, id, seed, {sessions})` accepts
+`{id, arrive, depart, energy, maxKw}` with absolute hours inside 0–36 (e.g. departure 30
+means 06:00 tomorrow). Generated `evSessions` retain their existing next-morning clock-hour
+format; `runProtect` converts them internally.
 
 The budget checks cover zero/small caps, all action costs, resource limits and baseline
 affordability. `runPlan` requires `{capexInr, upgrades, mobileUnits}` as non-negative integers.
@@ -133,6 +151,8 @@ to `/tmp/greentrafo-warm-*.png`.
 Run `node tests/browser-plan-protect.cjs` for all scenario/profile handoffs, comparisons
 against engine metrics, zero/custom plans, removal, invalidation and responsive views.
 Screenshots are written to `/tmp/greentrafo-handoff-*.png`.
+Run `node tests/browser-overnight.cjs` for midnight replay, delivery summaries, per-session
+disclosure and a deliberately infeasible test session. Screenshots use `/tmp/greentrafo-overnight-*.png`.
 
 `engine.js` and `optimize.js` use ES module syntax. On Node 18.20, direct imports require
 `--experimental-default-type=module`; the build and regression scripts need no flags.

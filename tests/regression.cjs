@@ -64,7 +64,7 @@ for (const seed of [1, 7, 42, 99, 2026]) {
       assert.ok(pr.overLimitManaged <= pr.overLimitUnmanaged);
       const energy = evSessions(t, scenario, seed).reduce((sum, s) => sum + s.energy, 0);
       for (const key of ['managedKw', 'unmanagedKw', 'touKw']) {
-        assert.equal(pr[key].length, 96);
+        assert.equal(pr[key].length, 144);
         assert.ok(pr[key].every(v => Number.isFinite(v) && v >= 0));
         assert.ok(Math.abs(pr[key].reduce((sum, kw) => sum + kw * 0.25, 0) - energy) < 0.02);
       }
