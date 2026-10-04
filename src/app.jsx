@@ -121,14 +121,14 @@ function ParetoChart({ pareto, selIdx, onPick, baseline }) {
 }
 
 // ---------- line chart for temperature / loading ----------
-function LineChart({ series, limit, ambient, ylabel, markers, band }) {
+function LineChart({ series, limit, ambient, ylabel, markers, band, endHour = 24 }) {
   const W = 356, H = 190, pad = 34;
   const allData = series.flatMap(s => s.data);
   if (band) { allData.push(...band.low, ...band.high); }
   const n = series[0].data.length;
   const all = allData.concat(ambient || []).concat(limit ? [limit] : []);
   const ymin = Math.min(...all), ymax = Math.max(...all);
-  const X = i => pad + i / (n - 1) * (W - pad - 10);
+  const X = i => pad + i / n * (W - pad - 10);
   const Y = v => (H - pad) - (v - ymin) / ((ymax - ymin) || 1) * (H - pad - 12);
   const path = (data) => data.map((v, i) => (i ? "L" : "M") + X(i).toFixed(1) + " " + Y(v).toFixed(1)).join(" ");
   // band polygon: forward along high, backward along low
@@ -137,18 +137,18 @@ function LineChart({ series, limit, ambient, ylabel, markers, band }) {
     const bwd = band.low.slice().reverse().map((v, i) => "L" + X(band.low.length - 1 - i).toFixed(1) + " " + Y(v).toFixed(1)).join(" ");
     return fwd + " " + bwd + " Z";
   })() : null;
-  const hours = [0, 6, 12, 18, 24];
+  const hours = endHour === 36 ? [0, 12, 18, 24, 30, 36] : [0, 6, 12, 18, 24];
   return (
     <svg viewBox={`0 0 ${W} ${H}`} style={{ width: "100%", height: "auto" }} role="img" aria-label={ylabel}>
       <defs><filter id="lglow" x="-10%" y="-40%" width="120%" height="180%">
         <feGaussianBlur stdDeviation="2" result="b" /><feMerge><feMergeNode in="b" /><feMergeNode in="SourceGraphic" /></feMerge>
       </filter></defs>
       {/* evening peak window shading (drawn first, behind) */}
-      <rect x={X(18 / 24 * (n - 1))} y="8" width={X(22 / 24 * (n - 1)) - X(18 / 24 * (n - 1))} height={H - pad - 8}
+      <rect x={X(18 / endHour * n)} y="8" width={X(22 / endHour * n) - X(18 / endHour * n)} height={H - pad - 8}
         fill="#F2C12E" fillOpacity="0.09" />
       <line x1={pad} y1={H - pad} x2={W - 6} y2={H - pad} stroke="rgba(255,255,255,0.12)" />
       <line x1={pad} y1="8" x2={pad} y2={H - pad} stroke="rgba(255,255,255,0.12)" />
-      {hours.map(h => <text key={h} x={X(h / 24 * (n - 1))} y={H - pad + 13} textAnchor="middle" fontSize="9.5" fill="var(--ink-3)">{h}:00</text>)}
+      {hours.map(h => <text key={h} x={X(h / endHour * n)} y={H - pad + 13} textAnchor={h === endHour ? "end" : "middle"} fontSize="9.5" fill="var(--ink-3)">{h >= 24 && endHour > 24 ? `${h % 24}+1d` : `${h}:00`}</text>)}
       <text x="10" y={(H - pad) / 2} textAnchor="middle" fontSize="10" fill="var(--ink-3)"
         transform={`rotate(-90 10 ${(H - pad) / 2})`}>{ylabel}</text>
       {/* p10/p90 uncertainty band */}
@@ -186,8 +186,8 @@ function Convergence({ history }) {
 function ChargeBar({ unmanagedKw, managedKw, touKw, step }) {
   const W = 356, H = 138, pad = 28, plotTop = 18;
   const n = unmanagedKw.length;
-  // only show evening window 16:00–24:00 (steps 64–96)
-  const startS = 64, endS = 96, span = endS - startS;
+  // Show evening through next morning so shifted charging is visible.
+  const startS = 64, endS = unmanagedKw.length, span = endS - startS;
   const allVals = unmanagedKw.slice(startS, endS).concat(managedKw.slice(startS, endS)).concat((touKw || []).slice(startS, endS));
   const maxV = Math.max(...allVals, 0.01);
   const slotW = (W - pad) / span;
@@ -196,12 +196,12 @@ function ChargeBar({ unmanagedKw, managedKw, touKw, step }) {
   const H2 = 72, baselineY = plotTop + H2;
   return (
     <svg viewBox={`0 0 ${W} ${H}`} style={{ width: "100%", height: "auto" }} role="img" aria-label="EV charge schedule">
-      <text x={pad} y={10} fontSize="9" fill="var(--ink-3)">EV charging kW (16:00–24:00)</text>
+      <text x={pad} y={10} fontSize="9" fill="var(--ink-3)">EV charging kW (16:00–12:00 +1d)</text>
       <line x1={pad} y1={baselineY} x2={W} y2={baselineY} stroke="rgba(255,255,255,0.1)" />
-      {[16, 18, 20, 22, 24].map(h => {
+      {[16, 20, 24, 28, 32, 36].map(h => {
         const s = (h * 4) - startS;
         if (s < 0 || s > span) return null;
-        return <text key={h} x={X(s)} y={baselineY + 11} textAnchor={h === 24 ? "end" : "middle"} fontSize="8.5" fill="var(--ink-3)">{h}:00</text>;
+        return <text key={h} x={X(s)} y={baselineY + 11} textAnchor={h === 36 ? "end" : "middle"} fontSize="8.5" fill="var(--ink-3)">{h >= 24 ? `${h % 24}+1d` : `${h}:00`}</text>;
       })}
       {Array.from({ length: span }, (_, i) => {
         const si = startS + i;
@@ -253,7 +253,7 @@ function GreenStrip({ green, extra }) {
       <Item n={green.dieselHoursAvoided.toFixed(1)} u="hours" lab="Diesel generator hours avoided"
         tip={`Overload hours prevented versus no action × assumed ${Math.round(green.dieselShare * 100)}% served by diesel.`} />
       {extra && <Item n={extra.kwh} u="kWh/evening" lab="Peak energy shifted to greener hours"
-        tip="Flexible EV and AC load moved out of the 18:00–22:00 evening peak." />}
+        tip="EV energy moved out of the 18:00–22:00 evening peak, excluding unmet charging demand." />}
       {co2 && <Item n={co2} u="kg CO₂" lab="Carbon avoided (evening shift)"
         tip={`Peak kWh shifted × ${CO2_FACTOR} kgCO₂/kWh (CEA 2024 Indian average grid emission factor, assumed).`} />}
     </div></div>
@@ -630,7 +630,7 @@ function ProtectTab({ network: originalNetwork, transferredPlan, onClearPlan }) 
     playing.current = true; force(x => x + 1);
     const tick = () => {
       if (!playing.current) return;
-      setStep(s => { const n = s + 1; if (n >= 96) { playing.current = false; force(x => x + 1); return 95; } return n; });
+      setStep(s => { const n = s + 1; if (n >= pr.managedKw.length) { playing.current = false; force(x => x + 1); return pr.managedKw.length - 1; } return n; });
       setTimeout(tick, 60);
     };
     tick();
@@ -640,7 +640,7 @@ function ProtectTab({ network: originalNetwork, transferredPlan, onClearPlan }) 
   network.transformers.forEach(t => { hotSpotNow[t.id] = null; });
   if (sel && hs.length) hotSpotNow[sel] = hs[step];
 
-  const hourLabel = (() => { const h = step * 0.25; const hh = Math.floor(h) % 24; const mm = Math.round((h % 1) * 60); return String(hh).padStart(2, "0") + ":" + String(mm).padStart(2, "0"); })();
+  const hourLabel = (() => { const h = step * 0.25; const hh = Math.floor(h) % 24; const mm = Math.round((h % 1) * 60); return (h >= 24 ? "+1d " : "") + String(hh).padStart(2, "0") + ":" + String(mm).padStart(2, "0"); })();
 
   const steps = [
     { label: "Forecast the evening", state: "done" },
@@ -680,7 +680,7 @@ function ProtectTab({ network: originalNetwork, transferredPlan, onClearPlan }) 
         <div className="railL">
           <div className="card">
             <h2>Protect the evening</h2>
-            <div className="sub">Shift flexible EV & AC load within the thermal limit.</div>
+            <div className="sub">Schedule EV & AC flexibility through the next morning.</div>
             <div className="field">
               <label>Scenario</label>
               <div className="seg wrap2">
@@ -724,10 +724,10 @@ function ProtectTab({ network: originalNetwork, transferredPlan, onClearPlan }) 
               </div>
             </div>
             <div className="field" style={{ marginBottom: 0 }}>
-              <label>Evening replay</label>
+              <label>Replay · today through tomorrow noon</label>
               <div className="slider-row">
                 <button className="playbtn" onClick={play}>{playing.current ? "❚❚" : "▶"}</button>
-                <input type="range" min="0" max="95" value={step} onChange={e => setStep(+e.target.value)} />
+                <input aria-label="Overnight replay time" type="range" min="0" max={pr.managedKw.length - 1} value={step} onChange={e => setStep(+e.target.value)} />
                 <span className="clock">{hourLabel}</span>
               </div>
             </div>
@@ -761,8 +761,8 @@ function ProtectTab({ network: originalNetwork, transferredPlan, onClearPlan }) 
               <h2>Hot-spot temperature tonight</h2>
               <span className="ribbon" style={{ color: managed ? "var(--green-br)" : "var(--neg)", borderColor: managed ? "var(--line-2)" : "rgba(226,76,76,0.4)", background: managed ? "rgba(61,205,88,0.1)" : "rgba(226,76,76,0.1)" }}>{managed ? "Managed" : "Unmanaged"} highlighted</span>
             </div>
-            <div className="sub">Green = Managed · Amber = ToU · Red = Unmanaged · dashed = ambient</div>
-            <LineChart ylabel="°C" limit={110} ambient={pr.ambient}
+            <div className="sub">Green = Managed · Amber = ToU · Red = Unmanaged · dashed = ambient · +1d = tomorrow</div>
+            <LineChart ylabel="°C" limit={110} ambient={pr.ambient} endHour={36}
               series={[
                 { data: pr.unmanaged.hotSpot, color: managed ? "rgba(226,76,76,0.3)" : "#E24C4C" },
                 { data: pr.tou ? pr.tou.hotSpot : [], color: "rgba(242,193,46,0.7)" },
@@ -777,15 +777,34 @@ function ProtectTab({ network: originalNetwork, transferredPlan, onClearPlan }) 
             <div className={"mstat " + (managed ? "good" : "bad")}>
               <div className="n">{(managed ? pr.overLimitManaged : pr.overLimitUnmanaged).toFixed(1)} h</div>
               <div className="l">Time over 110°C limit</div></div>
-            <div className="mstat good">
+            <div className={"mstat " + (pr.onTimeShare >= 0.95 ? "good" : "bad")}>
               <div className="n">{Math.round(pr.onTimeShare * 100)}%</div>
-              <div className="l">EV sessions on time</div></div>
+              <div className="l">Managed EV sessions on time</div></div>
             <div className="mstat good">
               <div className="n">{pr.lolSaved.toFixed(1)} h</div>
               <div className="l">Loss of life saved</div></div>
             <div className="mstat good">
               <div className="n">{pr.peakKwhShifted.toFixed(0)}</div>
               <div className="l">kWh shifted off peak</div></div>
+          </div>
+          <div className="card" style={{ marginTop: 14 }} data-testid="charging-audit">
+            <h2>Charging delivery · by departure</h2>
+            <div className="sub">36-hour simulation · oil temperature carries through midnight. Slot values are 15-minute average kW.</div>
+            {[["unmanaged", "Unmanaged"], ["tou", "ToU"], ["managed", "Managed"]].map(([key, label]) =>
+              <div key={key} className="reason" data-testid={`delivery-${key}`}>
+                <b>{label}</b> · {(pr.energy[key].onTimeShare * 100).toFixed(0)}% on time<br />
+                {pr.energy[key].deliveredKwh.toFixed(2)} / {pr.energy[key].requestedKwh.toFixed(2)} kWh delivered · {pr.energy[key].unmetKwh.toFixed(2)} kWh unmet
+              </div>)}
+            {pr.energy.managed.unmetKwh > 1e-6 && <div role="alert" className="callout" style={{ marginTop: 10 }}>Some charging demand is unmet. The scheduler preserves charger/window limits; it does not guarantee feasibility or thermal safety.</div>}
+            <details style={{ marginTop: 12 }}>
+              <summary>Inspect EV sessions ({pr.sessions})</summary>
+              {pr.sessionReports.map(s => <div className="reason" key={s.id}>
+                <b>{s.id}</b> · {s.maxKw.toFixed(1)} kW charger<br />
+                Arrive {s.arrive.toFixed(2)} h · depart {s.depart.toFixed(2)} h from today's midnight<br />
+                Managed: {s.managed.deliveredKwh.toFixed(2)} / {s.energy.toFixed(2)} kWh · {s.managed.onTime ? "On time" : "Unmet demand"}
+              </div>)}
+            </details>
+            <div className="hint" style={{ marginTop: 10 }}>ToU charges only from 22:00 to 06:00 +1d. Tomorrow repeats today's assumed base load and weather. Thermal metrics cover the full 36 hours; unmet energy is excluded from shifted kWh.</div>
           </div>
         </div>
       </div></main></div>
@@ -894,7 +913,12 @@ function MethodTab() {
           All charging baselines use the selected network. Removing the plan restores standalone demand;
           changing scenario or editing/re-running Plan clears the handoff. Snapshots last only until reload.</li>
         <li><b>Protect</b> shifts flexible EV and AC load and reports the resulting temperature and
-          on-time share. The greedy scheduler does not guarantee thermal safety.</li>
+          on-time share over 36 continuous hours, through tomorrow noon. Each EV's exact
+          connection window bounds its 15-minute average charging power, including partial slots.
+          All allocation passes share that EV's remaining slot capacity. ToU uses only 22:00–06:00
+          next day. Oil state carries through midnight; tomorrow repeats today's assumed demand
+          and weather. Unmet energy is reported, not counted as shifted energy. The greedy
+          scheduler does not guarantee thermal safety or feasible delivery.</li>
       </ul>
 
       <h2>Assumptions and honest limits</h2>
@@ -918,7 +942,7 @@ function MethodTab() {
         ["Why is all data synthetic?", "Real DISCOM load data is not publicly available and varies by utility. Synthetic seeded data lets us prove the method end-to-end, publish the full config, and reproduce every result — which a judge can verify. The production system (TDD §9) uses pandapower with calibrated CEA/BIS parameters."],
         ["How accurate is the thermal model?", "The IEEE C57.91 top-oil / hot-spot model is the industry standard. We use typical constants from the standard; absolute loss-of-life numbers are approximate. Always compare Plan vs baseline — relative improvements are reliable even if absolute figures have uncertainty."],
         ["Why NSGA-II and not a greedy heuristic?", "A greedy heuristic (the 80/90 rule) is the current practice — it is the baseline we beat. NSGA-II gives a Pareto front of 15–30 plans in ~240 ms, letting the planner choose their own capex-vs-reliability trade-off instead of accepting a single answer."],
-        ["Why valley-filling instead of cvxpy for Protect?", "Valley-filling is fast (<1 ms), interpretable, and provably meets energy-by-departure constraints. The TDD §11 describes the full cvxpy rolling-horizon MPC for production; this prototype shows the same outcome shape with a transparent greedy proxy."],
+        ["Why valley-filling instead of cvxpy for Protect?", "Valley-filling is a transparent greedy approximation. It respects individual charger power and exact session windows, carries thermal state across midnight, and reports unmet demand; it cannot guarantee thermal safety or feasible delivery. The TDD §11 describes the full cvxpy rolling-horizon MPC for production; this prototype shows the same outcome shape with a transparent greedy proxy."],
         ["How does GreenTrafo fit with Schneider's products?", "ADMS handles outage restoration and FLISR. DERMS manages DER dispatch at feeder level. EVlink manages building-side EV charging. GreenTrafo sits one step earlier: neighbourhood-transformer thermal life, pre-summer planning, and evening peak protection — none of which those products address."],
       ].map(([q, a]) => <Faq key={q} q={q} a={a} />)}
     </div></main></div>

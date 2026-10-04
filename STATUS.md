@@ -31,7 +31,34 @@ load-growth forecast that Plan uses conservatively. The earlier 60% estimate was
 remaining work includes algorithm constraints, independent forecasting evaluation and
 full TDD validation, as well as power flow, API, persistence and deployment.
 
-## Current checkpoint — v0.8.0 Plan-to-Protect handoff, 2026-10-04
+## Current checkpoint — v0.9.0 overnight Protect correctness, 2026-10-04
+
+- Protect uses 144 chronological slots: 00:00 today through 12:00 tomorrow. Oil state
+  carries across midnight; next-morning EV charging is no longer wrapped into today's dawn.
+- Every EV allocation is bounded by its exact arrival/departure overlap and remaining
+  charger capacity across all cap passes. Unmanaged charges chronologically; ToU strictly
+  uses 22:00–06:00 tomorrow without an out-of-window fallback.
+- Returns per-session power, delivered/unmet kWh and on-time status for each policy.
+  Impossible demand remains unmet and is excluded from shifted-energy reporting.
+- Replay/charts show next-day labels and morning charging. A delivery panel exposes all
+  policy totals and expandable EV details; unmet managed demand shows a warning.
+- Engine regressions passed: 15 Plan cases, 600 Protect cases, budget boundary tests,
+  45 warm re-plans and 360 handoff cases. New overnight tests audit 360 schedules per
+  session/slot, fractional windows, impossible/crowded requests, strict ToU, power/energy
+  limits and an independent thermal recurrence across midnight.
+- Still a greedy prototype: thermal limits are soft, next-day base/weather repeat today's
+  assumptions, and departure uncertainty/rolling-horizon convex optimisation remain unbuilt.
+  Protect now reports 36-hour metrics; older 24-hour figures are not directly comparable.
+- Visible Chrome verification passed: all overnight scenarios, midnight replay, delivery
+  totals/session details and an injected impossible-demand warning. Desktop/mobile screenshots
+  inspected. Existing budget, warm-start and handoff browser suites passed, including nine
+  scenario/profile transfers and 66 before/after comparisons.
+- Full-site walkthrough passed 120 transformer detail cards, all Plan/Protect scenarios,
+  profiles, Pareto selection, copy, replay, FAQs, repeated validation, three viewport widths
+  and both HTML entry points, with no runtime/console errors or failed requests.
+- Stop here for user review and commit. No commit or push performed.
+
+## Previous checkpoint — v0.8.0 Plan-to-Protect handoff, 2026-10-04
 
 - Explicit **Use this plan in Protect** transfers the selected profile/custom point,
   scenario and exact p90 planning demand into Protect, applying each action once.
@@ -139,7 +166,7 @@ full TDD validation, as well as power flow, API, persistence and deployment.
 | 8. Data model | 🟡 | Entities exist in-memory as JS objects; no SQLite/Parquet persistence. |
 | 9. Simulation engine | 🟡 | IEEE C57.91 thermal model ✅ in JS. Power flow is a lightweight load approximation, **not pandapower/OpenDSS**. |
 | 10. Plan module | 🟡 | Pareto search, profiles, hard rupee/count caps, same-cap baseline and warm-start budget re-planning work. Actual spending may differ; archives are in-memory and search is approximate. |
-| 11. Protect module | 🟡 | Valley-filling scheduler with departure-time + comfort constraints ✅. Dual-curve comparison chart + EV charge bar chart added. Not the full cvxpy convex programme. |
+| 11. Protect module | 🟡 | Per-EV power/window constraints, unmet-demand reporting and chronological overnight thermal simulation work. AC relief is an assumed 7% evening reduction; hard thermal/comfort constraints, departure uncertainty and convex MPC remain absent. |
 | 12. Forecasting | 🟡 | Deterministic p10/p50/p90 quantile regression and p90 Plan inputs work. Coverage is shown; median pinball loss is returned by the engine. Independent evaluation, naive baseline and growth-draw sampling remain. |
 | 13. API specification | ⬜ | No REST API; the engine runs in-browser. API is designed in the TDD. |
 | 14. Frontend design | ✅ | Three tabs + Validate tab + dark hero + green-outcomes panel (CO₂ metric). Transformer detail panel, FAQ accordion. |
@@ -160,6 +187,7 @@ full TDD validation, as well as power flow, API, persistence and deployment.
 - ✅ **Protect**: evening replay with 3-curve hot-spot chart (Managed / ToU / Unmanaged on same chart)
 - ✅ **Protect**: explicit Plan handoff, same-p90 before/after comparison, action/capacity inspection and snapshot removal
 - ✅ **Protect**: EV charge schedule bar chart with 3 series (red = Unmanaged, amber = ToU, green = Managed)
+- ✅ **Protect**: per-session charging constraints, explicit shortfalls, 36-hour thermal carry-over and next-morning replay
 - ✅ **Protect**: robust scenario handling — never crashes even when no transformers are strictly at-risk (3-tier fallback)
 - ✅ **Validate tab** — 5 prototype smoke checks pass at seed 42 (not full TDD acceptance)
 - ✅ Green-outcomes accounting: avoided replacements, diesel hours avoided, peak kWh shifted, **CO₂ avoided** (0.82 kgCO₂/kWh CEA 2024)
@@ -183,9 +211,9 @@ full TDD validation, as well as power flow, API, persistence and deployment.
   comparisons remain distinct from the implemented same-cap comparison. Warm starts are
   implemented, as is Plan-to-Protect action transfer. Realised-temperature feedback remains absent.
 - Forecast evaluation needs independent historical/current targets and a naive baseline.
-- Protect rounds arrival/departure slots, can revisit a session's slot across cap passes,
-  and wraps overnight charging into a single day. Per-session power/window checks and
-  chronological thermal carry-over are still needed; aggregate regression passes do not prove these.
+- Protect now respects per-session power/windows and chronological thermal carry-over.
+  Hard thermal constraints, departure uncertainty and physical AC comfort modelling remain;
+  a greedy schedule can leave demand unmet even if another allocation could be feasible.
 - Green accounting in Protect uses simplified proxies; shifting kWh alone does not establish
   avoided CO₂ without an off-peak emissions comparison.
 - Existing claims about guaranteed thermal safety, live progress, and full validation
