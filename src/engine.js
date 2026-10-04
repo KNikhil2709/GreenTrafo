@@ -324,6 +324,24 @@ export function actionCost(t, action) {
   return 0;
 }
 
+// Snapshot the exact planning demand and apply each action once. Protect can
+// compare these two independent networks using identical seeded EV sessions.
+export function createProtectPlan(network, scenario, actions) {
+  if (!Object.hasOwn(SCENARIOS, scenario)) throw new RangeError("Unknown plan scenario");
+  const ids = new Set(network.transformers.map(t => t.id));
+  if (!actions || Object.keys(actions).length !== ids.size ||
+      Object.keys(actions).some(id => !ids.has(id)) ||
+      network.transformers.some(t => !Object.hasOwn(actions, t.id) ||
+        !["none", "upgrade", "rebalance", "mobile"].includes(actions[t.id])))
+    throw new RangeError("Plan must specify one valid action per transformer");
+  const before = { ...network, transformers: network.transformers.map(t => ({ ...t })),
+    edges: network.edges.map(edge => [...edge]) };
+  const after = { ...network, transformers: before.transformers.map(t => applyAction(t, actions[t.id])),
+    edges: network.edges.map(edge => [...edge]) };
+  return { scenario, before, after, actions: { ...actions },
+    capexInr: network.transformers.reduce((sum, t) => sum + actionCost(t, actions[t.id]), 0) };
+}
+
 // Include every demand/rating input used by applyAction and simulateTransformer.
 // Transformer IDs repeat across seeds and forecast quantiles.
 const simCache = new Map();

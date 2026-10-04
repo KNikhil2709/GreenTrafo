@@ -309,7 +309,7 @@ function TransformerDetail({ transformerId, network, scenario, perT, forecast })
 
 
 // ---------- Plan tab ----------
-function PlanTab({ network, scenario, setScenario }) {
+function PlanTab({ network, scenario, setScenario, onTransfer, onInvalidate }) {
   const [budget, setBudget] = useState({ capexInr: 2400000, upgrades: 8, mobileUnits: 3 });
   const [result, setResult] = useState(null);
   const [profile, setProfile] = useState("balanced");
@@ -329,6 +329,7 @@ function PlanTab({ network, scenario, setScenario }) {
   const preview = useMemo(() => evaluatePlan(planningNetwork, scenario, {}), [planningNetwork, scenario]);
 
   function changeBudget(key, value) {
+    onInvalidate();
     setBudget(current => ({ ...current, [key]: value }));
     setResult(null); setSelIdx(null); setCopied(false); setRunError(null);
   }
@@ -338,6 +339,7 @@ function PlanTab({ network, scenario, setScenario }) {
     Object.keys(budget).some(key => budget[key] !== previousRun.current.result.budget[key]);
 
   function run() {
+    onInvalidate();
     setBusy(true); setRunError(null); setCopied(false);
     const archive = canWarmStart ? previousRun.current.result.archive : null;
     // Yield once so the busy state paints; the search itself is synchronous.
@@ -414,7 +416,7 @@ function PlanTab({ network, scenario, setScenario }) {
               <label>Scenario</label>
               <div className="seg wrap2">
                 {SCEN_KEYS.map(k => <button key={k} disabled={busy} aria-pressed={scenario === k}
-                  onClick={() => { setScenario(k); setResult(null); setCopied(false); setRunError(null); previousRun.current = null; }}>{SCENARIOS[k].label}</button>)}
+                  onClick={() => { onInvalidate(); setScenario(k); setResult(null); setCopied(false); setRunError(null); previousRun.current = null; }}>{SCENARIOS[k].label}</button>)}
               </div>
             </div>
             <div className="field">
@@ -523,6 +525,11 @@ function PlanTab({ network, scenario, setScenario }) {
                 {budget.capexInr === 0 && <div>Zero budget: both policies take no action.</div>}
               </div>
               <CompareBars plan={chosen} base={result.baseline} />
+              <button className="btn" disabled={busy} onClick={() => onTransfer({
+                ...createProtectPlan(planningNetwork, scenario, chosen.actions), profile,
+                budget: { ...result.budget }, demand: "p90"
+              })}>Use this plan in Protect</button>
+              <div className="hint" style={{ marginTop: 8 }}>Carry this selection and its p90 demand assumptions into the evening simulation.</div>
             </div>
           </>}
         </div>
@@ -559,8 +566,15 @@ function CompareBars({ plan, base }) {
 }
 
 // ---------- Protect tab ----------
-function ProtectTab({ network }) {
-  const [scenario, setScenario] = useState("highEV");
+function ProtectTab({ network: originalNetwork, transferredPlan, onClearPlan }) {
+  const [scenario, setScenario] = useState(transferredPlan?.scenario ?? "highEV");
+  const [usePlan, setUsePlan] = useState(true);
+  const plan = transferredPlan?.scenario === scenario ? transferredPlan : null;
+  const network = plan ? (usePlan ? plan.after : plan.before) : originalNetwork;
+  function changeScenario(value) {
+    if (value !== scenario) { onClearPlan(); setUsePlan(true); }
+    setScenario(value);
+  }
   // rank transformers by how much their EVENING EV load pushes them toward the hot-spot limit,
   // preferring ones where flexible load is the swing factor (base load alone stays under limit).
   // Returns { ids: string[], empty: bool }
@@ -591,12 +605,13 @@ function ProtectTab({ network }) {
 
   // sel is always derived from risky so it can never be stale/undefined
   const [_sel, setSel] = useState(null);
-  const sel = risky.includes(_sel) ? _sel : (risky[0] ?? null);
+  const sel = (plan ? network.transformers.some(t => t.id === _sel) : risky.includes(_sel)) ? _sel : (risky[0] ?? null);
 
   const [managed, setManaged] = useState(true);
   const [step, setStep] = useState(72); // 18:00
   const playing = useRef(false);
   const [, force] = useState(0);
+  useEffect(() => () => { playing.current = false; }, []);
 
   // keep _sel in sync when scenario changes
   useEffect(() => { setSel(risky[0] ?? null); }, [scenario]);
@@ -642,7 +657,7 @@ function ProtectTab({ network }) {
           <p>In the <b>{SCENARIOS[scenario].label}</b> scenario, no transformer is pushed over the 110 °C hot-spot limit by EV charging alone. Try <b>Hot summer</b> or <b>High EV growth</b> to see the Protect module in action.</p>
           <div className="seg" style={{ marginTop: 16, maxWidth: 320, marginLeft: "auto", marginRight: "auto" }}>
             {SCEN_KEYS.filter(k => k !== scenario).map(k =>
-              <button key={k} onClick={() => setScenario(k)}>{SCENARIOS[k].label}</button>)}
+              <button key={k} onClick={() => changeScenario(k)}>{SCENARIOS[k].label}</button>)}
           </div>
         </div>
       </div>
@@ -652,7 +667,7 @@ function ProtectTab({ network }) {
   return (
     <>
       <StepStrip steps={steps} />
-      {isMildScenario && <div className="greenstrip" style={{ background: "rgba(242,193,46,0.06)", borderBottom: "1px solid rgba(242,193,46,0.25)" }}><div className="wrap" style={{ padding: "8px 22px", fontSize: 12, color: "#E8D9A8" }}>⚠ In this scenario, baseline load already stresses the transformer — EV load is not the sole cause. Showing top affected units.</div></div>}
+      {isMildScenario && <div className="greenstrip" style={{ background: "rgba(242,193,46,0.06)", borderBottom: "1px solid rgba(242,193,46,0.25)" }}><div className="wrap" style={{ padding: "8px 22px", fontSize: 12, color: "#E8D9A8" }}>{riskyAll.some(x => x.swing > 0) ? "Baseline load already stresses these units; EVs are not the sole cause. Showing affected transformers." : "No unmanaged thermal breaches among the EV candidates. Showing busy transformers for inspection."}</div></div>}
       <GreenStrip
         green={{
           avoidedReplacements: pr.overLimitManaged < pr.overLimitUnmanaged ? 1 : 0,
@@ -669,15 +684,38 @@ function ProtectTab({ network }) {
             <div className="field">
               <label>Scenario</label>
               <div className="seg wrap2">
-                {SCEN_KEYS.map(k => <button key={k} aria-pressed={scenario === k} onClick={() => setScenario(k)}>{SCENARIOS[k].label}</button>)}
+                {SCEN_KEYS.map(k => <button key={k} aria-pressed={scenario === k} onClick={() => changeScenario(k)}>{SCENARIOS[k].label}</button>)}
               </div>
             </div>
+            {plan && <div className="reason" data-testid="transferred-plan" style={{ marginBottom: 14 }}>
+              <b>Plan: {({ lowestCost: "Lowest cost", balanced: "Balanced", mostReliable: "Most reliable", custom: "Custom selection" })[plan.profile]}</b><br />
+              {SCENARIOS[plan.scenario].label} · ₹{fmtL(plan.capexInr)} spent · {Object.values(plan.actions).filter(a => a !== "none").length} actions<br />
+              Same p90 demand and EV sessions in both views. Unmanaged, ToU and Managed all use the network selected below.
+              <div className="seg" style={{ marginTop: 8 }}>
+                <button aria-pressed={usePlan} onClick={() => setUsePlan(true)}>Selected plan</button>
+                <button aria-pressed={!usePlan} onClick={() => setUsePlan(false)}>Without plan</button>
+              </div>
+              <button onClick={onClearPlan} style={{ marginTop: 8, padding: "5px 10px", borderRadius: 8,
+                background: "var(--panel)", color: "var(--ink)", border: "1px solid var(--line)" }}>Remove plan</button>
+              <div className="hint">Removing the plan returns to standalone demand. Changing scenario also removes it.</div>
+            </div>}
+            {!plan && <div className="hint" data-testid="standalone-protect" style={{ marginBottom: 14 }}>Standalone simulation · no Plan actions applied. Choose a plan in Plan to carry its actions here.</div>}
             <div className="field">
               <label>At-risk transformer</label>
               <div className="seg wrap2">
                 {risky.slice(0, 4).map(id => <button key={id} aria-pressed={sel === id} onClick={() => setSel(id)}>{id}</button>)}
               </div>
             </div>
+            {plan && <div className="field">
+              <label htmlFor="inspect-transformer">Inspect any transformer</label>
+              <select id="inspect-transformer" value={sel} onChange={e => setSel(e.target.value)} style={{ width: "100%", padding: 8, background: "var(--panel)", color: "var(--ink)", border: "1px solid var(--line)", borderRadius: 8 }}>
+                {network.transformers.map(t => <option key={t.id} value={t.id}>{t.id} · {plan.actions[t.id]}</option>)}
+              </select>
+              <div className="reason" data-testid="applied-action">
+                {sel} · {usePlan ? plan.actions[sel] : "none"} · {network.transformers.find(t => t.id === sel)?.rating} kVA<br />
+                {usePlan ? "Selected plan actions applied once." : "Before plan actions; same p90 demand."}
+              </div>
+            </div>}
             <div className="field">
               <label>Control</label>
               <div className="seg">
@@ -697,8 +735,7 @@ function ProtectTab({ network }) {
           <div className="card" style={{ marginTop: 14 }}>
             <h2>Why it works</h2>
             <div className="hint">{sel} has {pr.sessions} EV sessions tonight. Managed charging fills the cool
-              early-morning hours and trims AC in the hottest window, so every vehicle still finishes by its
-              departure time while the transformer stays under its thermal limit.</div>
+              early-morning hours and trims AC in the hottest window. Check the measured on-time share and time above the limit below; thermal safety is not guaranteed. {plan && "Savings here measure scheduling against unmanaged charging on the selected network, not the total benefit of Plan."}</div>
           </div>
         </div>
 
@@ -707,11 +744,12 @@ function ProtectTab({ network }) {
           <div className="maphead">
             <div>
               <h2>Peak-evening thermal state</h2>
-              <div className="sub">{SCENARIOS[scenario].label} · {sel} selected · {hourLabel}</div>
+              <div className="sub">{SCENARIOS[scenario].label} · {sel} selected · {hourLabel}{plan ? (usePlan ? " · Plan applied · p90" : " · Before plan · p90") : ""}</div>
             </div>
             <span className="simbadge">Simulated data</span>
           </div>
-          <FeederMap network={network} perT={null} selected={sel} onSelect={id => { if (risky.includes(id)) setSel(id); }}
+          <FeederMap network={network} perT={plan && usePlan ? Object.fromEntries(Object.entries(plan.actions).map(([id, action]) => [id, { action }])) : null}
+            selected={sel} onSelect={id => { if (plan || risky.includes(id)) setSel(id); }}
             mode="thermal" hotSpotById={hotSpotNow} />
           <MapLegend mode="thermal" />
         </div>
@@ -850,8 +888,13 @@ function MethodTab() {
         <li><b>Growth forecast</b> fits p10 / median / p90 latent load growth from six synthetic historical
           seasonal readings per transformer, using prior peak, cooling share, EV count and neighbourhood-growth proxy.
           Plan uses p90 conservatively; the detail panel exposes the complete range. Coverage is measured on synthetic targets that share latent growth with the training history, not an independent test set.</li>
-        <li><b>Protect</b> schedules flexible EV and AC load for one evening so the hot-spot stays within limit while
-          every EV still finishes by its departure time.</li>
+        <li><b>Plan to Protect</b>: “Use this plan in Protect” snapshots the selected actions and scenario.
+          Upgrades change capacity; rebalance/mobile actions use the same approximate load relief as Plan.
+          Selected plan and Without plan use identical p90 demand assumptions and seeded EV sessions.
+          All charging baselines use the selected network. Removing the plan restores standalone demand;
+          changing scenario or editing/re-running Plan clears the handoff. Snapshots last only until reload.</li>
+        <li><b>Protect</b> shifts flexible EV and AC load and reports the resulting temperature and
+          on-time share. The greedy scheduler does not guarantee thermal safety.</li>
       </ul>
 
       <h2>Assumptions and honest limits</h2>
@@ -988,6 +1031,7 @@ function Hero({ onStart }) {
 // ---------- shell ----------
 function App() {
   const [tab, setTab] = useState("plan");
+  const [transferredPlan, setTransferredPlan] = useState(null);
   const [scenario, setScenario] = useState("hot");
   const network = useMemo(() => buildNetwork(42, 40), []);
   const appRef = useRef(null);
@@ -1018,8 +1062,12 @@ function App() {
           <button aria-selected={tab === "method"} onClick={() => setTab("method")}>Method &amp; limits</button>
           <button aria-selected={tab === "validate"} onClick={() => setTab("validate")}>Validate</button>
         </div></nav>
-        {tab === "plan" && <PlanTab network={network} scenario={scenario} setScenario={setScenario} />}
-        {tab === "protect" && <ProtectTab network={network} />}
+        {tab === "plan" && <PlanTab network={network} scenario={scenario} setScenario={setScenario}
+          onInvalidate={() => setTransferredPlan(null)} onTransfer={plan => {
+            setTransferredPlan(plan); setTab("protect");
+            requestAnimationFrame(() => appRef.current?.scrollIntoView({ block: "start" }));
+          }} />}
+        {tab === "protect" && <ProtectTab network={network} transferredPlan={transferredPlan} onClearPlan={() => setTransferredPlan(null)} />}
         {tab === "method" && <MethodTab />}
         {tab === "validate" && <ValidateTab network={network} />}
         <footer>GreenTrafo · simulated prototype · built for the Schneider Electric Yuva Yodha Energy Tech Hackathon 2026</footer>
