@@ -11,6 +11,6 @@
     "preview": "node scripts/serve.cjs",
     "vercel:package": "node scripts/package-vercel.cjs"
   },
-  "dependencies": { "react": "18.3.1", "react-dom": "18.3.1" },
+  "dependencies": { "react": "18.3.1", "react-dom": "19.3.0" },
   "devDependencies": { "@fontsource/inter": "5.3.0", "esbuild": "0.28.2", "playwright": "1.63.0" }
 }
