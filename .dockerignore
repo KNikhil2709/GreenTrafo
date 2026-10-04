@@ -1,0 +1,10 @@
+**
+!package.json
+!package-lock.json
+!build.js
+!src/
+!src/**
+!scripts/
+!scripts/build-production.cjs
+!deployment/
+!deployment/nginx.conf

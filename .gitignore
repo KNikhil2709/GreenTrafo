@@ -18,3 +18,7 @@ test*.mjs
 # editor
 .vscode/
 .idea/
+.vercel/
+.env
+.env.*
+artifacts/

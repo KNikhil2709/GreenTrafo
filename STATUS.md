@@ -31,7 +31,31 @@ load-growth forecast that Plan uses conservatively. The earlier 60% estimate was
 remaining work includes algorithm constraints, independent forecasting evaluation and
 full TDD validation, as well as power flow, API, persistence and deployment.
 
-## Current checkpoint — v0.9.0 overnight Protect correctness, 2026-10-04
+## Current checkpoint — v0.10.0 deployment preparation, 2026-10-04
+
+- Node 24 production build bundles React and compiles JSX, embeds Inter fonts, removes
+  runtime CDNs, adds script-hash CSP and publishes only an allowlisted `dist/` with release
+  identity/health and 404 handling. Legacy preview files remain supported.
+- Digest-pinned multi-stage Docker image and Compose: non-root Nginx, read-only runtime,
+  bounded temporary storage, dropped capabilities, health check, graceful stop and JSON logs.
+- GitHub Actions gates the tested artifact on engine, production, release-gate, Docker and
+  whole-site browser tests. Vercel production releases are staged, verified by HTTP/browser
+  checks, then promoted; stale/failed releases cannot promote. Competing Git auto-deploys
+  are disabled. Secrets/environment setup and rollback are in `docs/DEPLOYMENT.md`.
+- Verified locally: clean Node 24 install/build and all engine tests; production artifact
+  parity/CSP; mocked release-gate failure/stale cases; Docker build/health/runtime restrictions;
+  real production browser flow with external network blocked. All five browser suites passed
+  against Docker in visible Chrome and pinned headless Chromium, including 120 transformer
+  details, 66 handoff comparisons and desktop/mobile views. Screenshots inspected; no runtime,
+  console or request failures. Actionlint and official Vercel project-schema checks passed.
+- Not yet cloud-verified: Vercel CLI dry run requires project linking; no cloud deployment,
+  promotion, rollback or GitHub-hosted workflow has run. User must configure project/secrets
+  and enable the workflow. Vercel's staged switch avoids taking down the existing release;
+  single-container Compose is not a zero-downtime production orchestrator. No uptime monitor
+  or future TDD backend has been provisioned.
+- Stop for user review/commit and Vercel setup. No commit or push performed.
+
+## Previous checkpoint — v0.9.0 overnight Protect correctness, 2026-10-04
 
 - Protect uses 144 chronological slots: 00:00 today through 12:00 tomorrow. Oil state
   carries across midnight; next-morning EV charging is no longer wrapped into today's dawn.
@@ -170,8 +194,8 @@ full TDD validation, as well as power flow, API, persistence and deployment.
 | 12. Forecasting | 🟡 | Deterministic p10/p50/p90 quantile regression and p90 Plan inputs work. Coverage is shown; median pinball loss is returned by the engine. Independent evaluation, naive baseline and growth-draw sampling remain. |
 | 13. API specification | ⬜ | No REST API; the engine runs in-browser. API is designed in the TDD. |
 | 14. Frontend design | ✅ | Three tabs + Validate tab + dark hero + green-outcomes panel (CO₂ metric). Transformer detail panel, FAQ accordion. |
-| 15. Testing and validation | 🟡 | Five seed-42 browser smoke checks pass, plus `tests/regression.cjs`. Full TDD experiments and CI remain; the browser Plan check tests a greedy ranking, not the evolutionary optimiser. |
-| 16. Deployment, monitoring, security | 🟡 | Runs locally / as a static page. No Docker, monitoring, or auth (none needed for the demo). |
+| 15. Testing and validation | 🟡 | Engine and whole-site browser regressions wired into CI; local CI-equivalent checks pass. Full TDD experiments remain; the in-app Plan validation tests greedy ranking, not the evolutionary optimiser. |
+| 16. Deployment, monitoring, security | 🟡 | Production static build, hardened Docker/Compose, health/logs and gated Vercel workflow prepared/tested locally. Cloud linking, first release and uptime monitoring remain; no backend/auth service. |
 | 17. Implementation plan and risks | ✅ | Documented; risks and honest limits shown in the app's Method tab + FAQ. |
 
 ## What works today (demo-ready)
@@ -201,9 +225,9 @@ full TDD validation, as well as power flow, API, persistence and deployment.
 2. ⬜ **Convex Protect** — replace the greedy scheduler with the cvxpy rolling-horizon programme.
 3. ⬜ **FastAPI backend** — expose `/plan`, `/protect`, `/simulate`, `/benchmark`; move compute server-side.
 4. ⬜ **Persistence** — SQLite run store + Parquet time series; one YAML config with versioning.
-5. ⬜ **Validation suite** — the five experiments in TDD §15, plus unit/regression tests in CI.
+5. 🟡 **Validation suite** — prototype regressions in CI; full TDD §15 experiments remain.
 6. ⬜ **Calibration to published statistics** — tie synthetic data to CEA/BIS figures formally.
-7. ⬜ **Deployment** — Docker Compose; hosted backend + frontend.
+7. 🟡 **Deployment** — prototype Docker/Compose and Vercel CI/CD prepared; cloud setup/verification and future hosted backend remain.
 
 ## Known gaps to prioritise with the user
 

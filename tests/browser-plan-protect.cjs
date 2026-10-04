@@ -1,14 +1,14 @@
 const assert = require('node:assert/strict');
 const {chromium} = require(process.env.PLAYWRIGHT_MODULE || 'playwright-core');
 (async()=>{
- const browser=await chromium.connectOverCDP('http://127.0.0.1:9222');
+ const browser=await chromium.connectOverCDP(process.env.CDP_URL || 'http://127.0.0.1:9222');
  try {
   const page=await browser.contexts()[0].newPage();
   await page.setViewportSize({width:1440,height:1000});
   const errors=[];
   page.on('pageerror',e=>errors.push(e.message));
   page.on('console',m=>{if(m.type()==='error') errors.push(m.text());});
-  await page.goto('http://127.0.0.1:3000/?handoff='+Date.now());
+  await page.goto((process.env.BASE_URL || 'http://127.0.0.1:3000') + '/?handoff='+Date.now());
   const button=name=>page.getByRole('button',{name,exact:true});
   const tab=name=>page.locator('nav.tabs').getByRole('button',{name,exact:true}).click();
   const handoff=page.getByTestId('transferred-plan');

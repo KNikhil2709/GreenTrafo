@@ -2,6 +2,27 @@
 
 All notable changes to the GreenTrafo prototype are documented here.
 
+## [v0.10.0] — 2026-10-04
+
+### Added
+- Locked Node 24 production build with embedded React/compiled JSX/fonts, script-hash CSP,
+  release health identity and a restricted deployable directory; no runtime CDN/Babel.
+- Digest-pinned multi-stage Docker build, unprivileged/read-only Nginx runtime, Compose,
+  health check, graceful shutdown, response headers and structured access logs.
+- CI engine/artifact/browser/Docker gates; immutable tested-artifact upload; Vercel staged
+  production smoke tests before promotion; stale-commit checks and serial release jobs.
+- Configurable browser target/CDP and an automated headless CI runner. Production checks
+  verify exact release bytes, blocked external requests, private-path 404s and headers.
+- Release-gate failure tests, Dependabot updates and complete Vercel setup/rollback guide.
+
+### Verified and limits
+- Clean Node 24 build/regressions, Docker health/non-root/read-only checks, whole-site
+  visible Chrome and pinned headless Chromium suites passed. Screenshots inspected.
+  Workflow lint, shell syntax, official Vercel project schema and release-gate tests passed.
+- Live Vercel deployment/promotion/rollback and hosted GitHub Actions execution await project
+  linking and secrets. Single-container Compose does not promise zero-downtime replacement;
+  the configured production strategy is Vercel staged promotion. Future backend is unbuilt.
+
 ## [v0.9.0] — 2026-10-04
 
 ### Fixed

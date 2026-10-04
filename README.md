@@ -12,6 +12,7 @@ All data is simulated.
 
 - **Project status (done vs. left):** [STATUS.md](STATUS.md)
 - **Design docs:** [docs/TDD.md](docs/TDD.md) · [docs/PRD.md](docs/PRD.md)
+- **Docker, Vercel and CI/CD:** [Deployment guide](docs/DEPLOYMENT.md)
 
 ## Documentation map
 
@@ -25,6 +26,23 @@ All data is simulated.
 | [build.md](build.md) | How the single HTML file is assembled from `src/` |
 
 ## Run it locally
+
+For the production build, use Node 24:
+
+```bash
+npm ci
+npm run build
+npm test
+npm run preview
+```
+
+Open **http://127.0.0.1:3000/**. Production files in `dist/` include React, compiled UI
+and fonts; they need no external CDN. Alternatively run
+`docker compose up -d --build --wait` and open **http://127.0.0.1:8080/**.
+See the [deployment guide](docs/DEPLOYMENT.md) for linking Vercel, GitHub secrets,
+staged release verification, promotion and rollback.
+
+### Legacy prototype preview
 
 The prototype is a single self-contained web page. No build step needed to run it.
 
@@ -88,7 +106,7 @@ CHANGELOG.md      history of prototype changes
 After editing anything in `src/`, rebuild the HTML:
 
 ```bash
-node build.js    # see build.md for the exact build script
+npm run build   # legacy HTML plus production dist/; requires Node 24 and npm ci
 ```
 
 The equivalent build script is documented in [build.md](build.md).
@@ -154,8 +172,8 @@ Screenshots are written to `/tmp/greentrafo-handoff-*.png`.
 Run `node tests/browser-overnight.cjs` for midnight replay, delivery summaries, per-session
 disclosure and a deliberately infeasible test session. Screenshots use `/tmp/greentrafo-overnight-*.png`.
 
-`engine.js` and `optimize.js` use ES module syntax. On Node 18.20, direct imports require
-`--experimental-default-type=module`; the build and regression scripts need no flags.
+`engine.js` and `optimize.js` use ES module syntax. Production tooling uses Node 24;
+the build and regression commands above require no module flags.
 
 ## What is real and what is not
 

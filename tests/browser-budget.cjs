@@ -3,14 +3,14 @@
 const assert = require('node:assert/strict');
 const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'playwright-core');
 (async () => {
-  const browser = await chromium.connectOverCDP('http://127.0.0.1:9222');
+  const browser = await chromium.connectOverCDP(process.env.CDP_URL || 'http://127.0.0.1:9222');
   try {
     const context = browser.contexts()[0];
     await context.grantPermissions(['clipboard-read', 'clipboard-write']);
     const page = await context.newPage();
     const errors = [];
     page.on('pageerror', error => errors.push(error.message));
-    await page.goto('http://127.0.0.1:3000/?budget=' + Date.now());
+    await page.goto((process.env.BASE_URL || 'http://127.0.0.1:3000') + '/?budget=' + Date.now());
     await page.getByRole('button', {name: 'Start planning', exact: true}).click();
     const summary = page.getByTestId('budget-summary');
     async function run() {

@@ -2,7 +2,7 @@
 const assert = require('node:assert/strict');
 const {chromium} = require(process.env.PLAYWRIGHT_MODULE || 'playwright-core');
 (async () => {
-  const browser = await chromium.connectOverCDP('http://127.0.0.1:9222');
+  const browser = await chromium.connectOverCDP(process.env.CDP_URL || 'http://127.0.0.1:9222');
   try {
     const context = browser.contexts()[0];
     await context.grantPermissions(['clipboard-read', 'clipboard-write']);
@@ -11,7 +11,7 @@ const {chromium} = require(process.env.PLAYWRIGHT_MODULE || 'playwright-core');
     page.on('pageerror', e => errors.push(e.message));
     page.on('console', m => {if (m.type() === 'error') errors.push(m.text());});
     await page.setViewportSize({width:1440, height:1000});
-    await page.goto('http://127.0.0.1:3000/?warm=' + Date.now());
+    await page.goto((process.env.BASE_URL || 'http://127.0.0.1:3000') + '/?warm=' + Date.now());
     const button = name => page.getByRole('button', {name, exact:true});
     await button('Start planning').click();
     const status = page.getByTestId('search-summary');

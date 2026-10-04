@@ -1,34 +1,33 @@
 # Build
 
-`index.html` (same as `greentrafo.html`) is assembled from `src/` by concatenation — no
-bundler, because the page uses in-browser Babel (`type="text/babel"`).
+Use Node 24 and `npm ci` for the pinned production toolchain.
 
-Order: `head.html`, then `<script>` + combined engine + `</script>`, then
-`<script type="text/babel" data-presets="react">` + `app.jsx` + `</script>`, then
-`</body></html>`.
-
-Combine the engine first: strip `import`/`export` from `engine.js` and `optimize.js`,
-concatenate (engine first), and rename `optimize.js`'s local `rng` helper to `rng2` so it
-does not clash with the one in `engine.js`.
-
-```js
-const fs = require("fs");
-let eng = fs.readFileSync("src/engine.js","utf8")
-  .replace(/^export\s*\{[^}]*\};?/gm,"").replace(/^export\s+/gm,"");
-let opt = fs.readFileSync("src/optimize.js","utf8")
-  .replace(/^import[\s\S]*?from\s+["'][^"']+["'];/gm,"")
-  .replace(/^export\s*\{[^}]*\};?/gm,"").replace(/^export\s+/gm,"")
-  .replace(/function rng\(/,"function rng2(")
-  .replace(/rng\((seed \* 2246822519)\)/,"rng2($1)");
-const html = fs.readFileSync("src/head.html","utf8")
-  + "\n<script>\n"+eng+"\n"+opt+"\n</script>\n"
-  + '<script type="text/babel" data-presets="react">\n'
-  + fs.readFileSync("src/app.jsx","utf8") + "\n</script>\n</body></html>";
-fs.writeFileSync("index.html", html);
-fs.writeFileSync("greentrafo.html", html);
+```bash
+npm run build
+npm test
+npm run preview
 ```
 
-## Toward the real backend
-Move `engine.js` to Python (pandapower power flow, NumPy IEEE C57.91), replace the JS
-optimisers with pymoo (Plan) and cvxpy (Protect), expose via FastAPI, and point the React
-UI at the API instead of the inlined engine.
+`npm run build` runs two stages:
+
+1. `build.js` preserves the legacy concatenated `index.html` / `greentrafo.html` preview.
+   It combines `src/head.html`, the engine and optimiser (stripping module syntax and
+   renaming the optimiser RNG helper), and the JSX UI. This legacy preview still uses CDN
+   React/Babel and is the source of the engine regression harness.
+2. `scripts/build-production.cjs` creates the deployable `dist/`. It embeds that exact
+   tested engine, bundles React 18 and precompiles/minifies JSX with esbuild, embeds local
+   Inter fonts, removes CDN scripts/font links, and adds a script-hash CSP. Each HTML file
+   is self-contained so a release switch cannot strand clients with missing JS chunks.
+   The artifact also includes health/revision/build identity, a 404 page and font licence.
+
+The production output is ignored by Git and built from the lockfile in CI. Never deploy
+repository source as the public document root. Docker and Vercel serve only `dist/`.
+`npm run vercel:package` packages an already-tested artifact as Build Output API v3;
+CI downloads the verified artifact instead of rebuilding before promotion.
+
+All engine/feature regressions run with `npm test`. The production test checks exact
+engine parity, script CSP hashes, output-file allowlisting and absence of runtime CDNs.
+Release-gate tests ensure failed checks and stale commits cannot promote.
+
+See [deployment instructions](docs/DEPLOYMENT.md) for Docker, browser verification,
+Vercel linking, CI/CD and rollback. The TDD's Python/FastAPI backend is future work.
