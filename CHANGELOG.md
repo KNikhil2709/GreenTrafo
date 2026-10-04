@@ -2,6 +2,37 @@
 
 All notable changes to the GreenTrafo prototype are documented here.
 
+## [v0.8.0] — 2026-10-04
+
+### Added
+- Explicit handoff from the selected Plan profile or Pareto point into Protect, carrying
+  its actions, scenario and exact p90 demand assumptions.
+- Independent before/after network snapshots with validated actions applied exactly once.
+  Protect compares both networks using the same seeded EV sessions; all charging baselines
+  use the currently selected network.
+- Selected-plan/without-plan switch, all-transformer inspection with action and capacity,
+  plan cost/count/profile provenance, and removal back to standalone demand.
+- Handoff engine tests covering 360 transformer cases and a visible-browser feature suite.
+
+### Changed
+- Scenario changes, Plan input edits and new optimisation runs clear the transferred
+  snapshot; unrelated navigation retains it until reload.
+- Protect's fallback message distinguishes no thermal breaches from existing base-load
+  stress. Its explanation reports outcomes without promising guaranteed thermal safety.
+- Replay stops when leaving Protect. Method explains handoff assumptions and comparison scope.
+
+### Verified
+- All existing engine, capex and warm-start tests passed, plus 360 new transformer cases.
+- Visible Chrome: nine scenario/profile handoffs, 66 before/after metric comparisons,
+  zero/custom/warm-start selections, snapshot persistence/removal/invalidation, action
+  markers, replay and responsive views. Desktop/mobile screenshots inspected.
+- Full-site browser suite passed all 120 transformer details, every scenario/profile,
+  Protect controls, FAQs, repeated validation, three viewport widths and both entry points.
+  Existing budget/warm-start browser suites passed. No console/runtime errors or failed
+  requests in the completed full-site walkthrough.
+- Handoff uses the prototype's existing load-relief model and scheduler. These checks
+  do not establish full TDD physics, overnight scheduling or real-network validity.
+
 ## [v0.7.0] — 2026-10-04
 
 ### Added

@@ -55,9 +55,16 @@ and Babel load from a CDN).
    Plan uses a conservative p90 latent-load-growth forecast; tap
    any transformer on the map for its p10 / p50 / p90 forecast and full detail panel.
    Use the 📋 Copy button to export the plan summary to clipboard.
+   Click **Use this plan in Protect** to carry the selected profile (or Pareto point),
+   actions, scenario and p90 demand into the evening simulation.
 3. **Protect** — pick an at-risk transformer, scrub the heatwave evening. The chart shows
    both **Managed** and **Unmanaged** hot-spot curves simultaneously, plus an EV charge
    schedule bar chart showing how load is shifted across the evening.
+   With a transferred plan, switch **Selected plan / Without plan** to compare actions
+   using the same p90 demand and EV sessions. Inspect any transformer to see its action
+   and resulting capacity. All three charging curves use the selected network.
+   **Remove plan** restores standalone demand. Changing Protect's scenario or editing/
+   re-running Plan clears the handoff; other tab navigation retains the snapshot until reload.
 4. **Method & limits** — what is real, what is assumed. Includes a collapsible FAQ.
 
 ## Source layout
@@ -90,6 +97,7 @@ node build.js
 node tests/regression.cjs
 node tests/plan-budget.cjs
 node tests/plan-warm-start.cjs
+node tests/plan-protect.cjs
 ```
 
 The checks exercise the shipped engine across five seeds and all three scenarios,
@@ -122,6 +130,9 @@ are written to `/tmp/greentrafo-full-*.png`.
 Run `node tests/browser-warm-start.cjs` as well for budget/resource changes, zero-to-high
 recovery, scenario/tab reset, error recovery and warm-start export. Screenshots are written
 to `/tmp/greentrafo-warm-*.png`.
+Run `node tests/browser-plan-protect.cjs` for all scenario/profile handoffs, comparisons
+against engine metrics, zero/custom plans, removal, invalidation and responsive views.
+Screenshots are written to `/tmp/greentrafo-handoff-*.png`.
 
 `engine.js` and `optimize.js` use ES module syntax. On Node 18.20, direct imports require
 `--experimental-default-type=module`; the build and regression scripts need no flags.

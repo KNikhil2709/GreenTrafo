@@ -18,7 +18,7 @@ TDD is deliberately **not yet built** — that is expected for a hackathon proto
   Protect scenarios/selection/modes/replay, Method FAQs and Validate. Check responsive
   layouts, runtime/console errors and failed requests. Use `tests/browser-budget.cjs`
   and `tests/browser-full.cjs` as the repeatable walkthroughs, plus feature-specific
-  browser checks such as `tests/browser-warm-start.cjs`.
+  browser checks such as `tests/browser-warm-start.cjs` and `tests/browser-plan-protect.cjs`.
 - Fix discovered UI regressions and rerun affected checks; document remaining model gaps.
 - Only after verification, provide commit/push commands, then stop until the user asks
   for the next feature. Do not commit or push on the user's behalf.
@@ -31,7 +31,33 @@ load-growth forecast that Plan uses conservatively. The earlier 60% estimate was
 remaining work includes algorithm constraints, independent forecasting evaluation and
 full TDD validation, as well as power flow, API, persistence and deployment.
 
-## Current checkpoint — v0.7.0 warm-start re-planning, 2026-10-04
+## Current checkpoint — v0.8.0 Plan-to-Protect handoff, 2026-10-04
+
+- Explicit **Use this plan in Protect** transfers the selected profile/custom point,
+  scenario and exact p90 planning demand into Protect, applying each action once.
+- **Selected plan / Without plan** compares actions on the same p90 demand and seeded EV
+  sessions. Unmanaged, ToU and Managed curves all use the selected network. The operator
+  can inspect every transformer, including units no longer at risk, and see action/capacity.
+- Snapshot persists across unrelated tab navigation, until reload. Remove plan or a new
+  Protect scenario clears it; changing Plan inputs or running Plan also clears it. Standalone
+  Protect continues to use original synthetic demand. No persistent storage or real control.
+- Uses existing action approximations: upgrades change capacity, rebalance/mobile reduce
+  base demand. EV sessions are unchanged; this is not a new feeder power-flow model.
+- 360 transformer handoff tests passed across three seeds and all scenarios, checking
+  every action, exact application, demand/session consistency, immutable source inputs,
+  independent snapshots, zero-budget/optimiser plans and invalid-action rejection.
+- Final visible Chrome handoff checks passed nine scenario/profile transfers and 66
+  before/after metric comparisons, custom/zero/warm-start handoffs, plan removal,
+  scenario/budget/rerun invalidation, navigation persistence, map action markers and replay.
+  Desktop/mobile screenshots inspected. Full-site walkthrough also passed 120 transformer
+  details, all Plan/Protect scenarios and controls, FAQs, validation, three viewport widths
+  and both HTML entry points, with no console/runtime errors or failed requests.
+- Existing engine, capex, warm-start and browser regression suites passed. Demo left open
+  on an upgraded transformer with its selected plan applied. No commit or push performed.
+- Suggested next feature: Protect per-session power/window correctness and chronological
+  overnight thermal carry-over. Await the user's instruction after completing this feature.
+
+## Previous checkpoint — v0.7.0 warm-start re-planning, 2026-10-04
 
 - Budget/resource changes retain a compatible Pareto archive and offer **Re-plan from
   previous plans**: 20 generations instead of the fresh search's 60.
@@ -108,7 +134,7 @@ full TDD validation, as well as power flow, API, persistence and deployment.
 | 3. Goals | 🟡 | Reliability, green and explainability goals met in-sim. "Under 10s Plan" met (~240ms). |
 | 4. Non-goals | ✅ | Honoured: no hardware, no real DISCOM integration, no quantum/causal-ML. |
 | 5. Users and actors | ✅ | Planner and operator flows both present (Plan, Protect tabs). |
-| 6. User journey | 🟡 | Both screens work; Protect does not yet consume the selected Plan actions. |
+| 6. User journey | 🟡 | Selected Plan actions and scenario now transfer to Protect, with a same-demand before/after comparison. Feedback from realised temperatures into future Plan remains absent. |
 | 7. System architecture | 🟡 | Prototype is a single-file browser app, not the FastAPI service. Architecture documented for production. |
 | 8. Data model | 🟡 | Entities exist in-memory as JS objects; no SQLite/Parquet persistence. |
 | 9. Simulation engine | 🟡 | IEEE C57.91 thermal model ✅ in JS. Power flow is a lightweight load approximation, **not pandapower/OpenDSS**. |
@@ -132,6 +158,7 @@ full TDD validation, as well as power flow, API, persistence and deployment.
 - ✅ **Plan**: 📋 Copy plan summary to clipboard
 - ✅ **Plan**: hard INR cap across all actions, same-cap baseline, spend/unspent totals and zero-budget handling
 - ✅ **Protect**: evening replay with 3-curve hot-spot chart (Managed / ToU / Unmanaged on same chart)
+- ✅ **Protect**: explicit Plan handoff, same-p90 before/after comparison, action/capacity inspection and snapshot removal
 - ✅ **Protect**: EV charge schedule bar chart with 3 series (red = Unmanaged, amber = ToU, green = Managed)
 - ✅ **Protect**: robust scenario handling — never crashes even when no transformers are strictly at-risk (3-tier fallback)
 - ✅ **Validate tab** — 5 prototype smoke checks pass at seed 42 (not full TDD acceptance)
@@ -154,7 +181,7 @@ full TDD validation, as well as power flow, API, persistence and deployment.
 
 - Plan now enforces a true capex constraint, including rebalance costs. Exact equal-spend
   comparisons remain distinct from the implemented same-cap comparison. Warm starts are
-  implemented; Plan-to-Protect action transfer is absent.
+  implemented, as is Plan-to-Protect action transfer. Realised-temperature feedback remains absent.
 - Forecast evaluation needs independent historical/current targets and a naive baseline.
 - Protect rounds arrival/departure slots, can revisit a session's slot across cap passes,
   and wraps overnight charging into a single day. Per-session power/window checks and
